@@ -9,6 +9,10 @@ const api: HubApi = {
   app: {
     getVersion: () => invoke(IpcChannel.AppGetVersion),
   },
+  settings: {
+    get: () => invoke(IpcChannel.SettingsGet),
+    set: (patch) => invoke(IpcChannel.SettingsSet, patch),
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

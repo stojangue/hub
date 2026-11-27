@@ -2,7 +2,7 @@
 
 /*
  * Design tokens. Use them as Tailwind utilities, e.g. `bg-surface`, `text-muted`.
- * Light values live in @theme; the dark overrides below follow `nativeTheme.themeSource` (src/main/index.ts).
+ * Light values live in @theme; the dark overrides below follow `nativeTheme.themeSource`, set from the Appearance setting (src/main/settings.ts).
  */
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;

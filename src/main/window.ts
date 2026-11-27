@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import { BrowserWindow, nativeTheme, shell } from 'electron'
+import { BrowserWindow, shell } from 'electron'
+import { windowBackgroundColor } from './settings'
 
 export function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -10,7 +11,7 @@ export function createMainWindow(): BrowserWindow {
     show: false,
     titleBarStyle: 'hiddenInset',
     // Matches `--color-background` in globals.css, so the window does not flash on open.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#18191b' : '#fcfcfc',
+    backgroundColor: windowBackgroundColor(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
