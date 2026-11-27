@@ -1,4 +1,4 @@
-import { GitBranch, LayoutDashboard, Settings, type LucideIcon } from 'lucide-react'
+import { InfinityIcon, LayoutDashboard, Settings, type LucideIcon } from 'lucide-react'
 import type { TranslationKey } from '@renderer/i18n'
 
 /** Central sidebar navigation. Add an entry here when a feature gets a route. */
@@ -10,7 +10,7 @@ export interface NavItem {
 
 export const navigation: readonly NavItem[] = [
   { labelKey: 'nav.overview', to: '/overview', icon: LayoutDashboard },
-  { labelKey: 'nav.devops', to: '/devops', icon: GitBranch },
+  { labelKey: 'nav.devops', to: '/devops', icon: InfinityIcon },
 ]
 
 /** Pinned at the bottom of the sidebar, separate from the main entries. */
