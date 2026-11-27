@@ -5,6 +5,7 @@
  * Must stay free of runtime dependencies on Node or the DOM.
  */
 
+import type { Blueprint, CreateBlueprintInput } from './blueprints'
 import type {
   GitHubResult,
   GitHubStatus,
@@ -14,6 +15,7 @@ import type {
   Repository,
   RepositoryItemsQuery,
 } from './github'
+import type { CreateJobInput, Job } from './jobs'
 import type { Settings } from './settings'
 
 export const IpcChannel = {
@@ -24,6 +26,14 @@ export const IpcChannel = {
   GitHubRepos: 'github:repos',
   GitHubIssues: 'github:issues',
   GitHubPullRequests: 'github:pullRequests',
+  BlueprintsList: 'blueprints:list',
+  BlueprintsGet: 'blueprints:get',
+  BlueprintsCreate: 'blueprints:create',
+  BlueprintsDelete: 'blueprints:delete',
+  JobsList: 'jobs:list',
+  JobsGet: 'jobs:get',
+  JobsCreate: 'jobs:create',
+  JobsDelete: 'jobs:delete',
 } as const
 
 export type IpcChannel = (typeof IpcChannel)[keyof typeof IpcChannel]
@@ -59,6 +69,46 @@ export interface IpcContract {
     request: [query: RepositoryItemsQuery]
     response: GitHubResult<ItemList<PullRequest>>
   }
+  [IpcChannel.BlueprintsList]: {
+    request: []
+    /** Newest first. */
+    response: Blueprint[]
+  }
+  [IpcChannel.BlueprintsGet]: {
+    request: [id: string]
+    /** `null` if no blueprint has this ID. */
+    response: Blueprint | null
+  }
+  [IpcChannel.BlueprintsCreate]: {
+    /** Rejects if the name is empty. */
+    request: [input: CreateBlueprintInput]
+    response: Blueprint
+  }
+  [IpcChannel.BlueprintsDelete]: {
+    /** Existing jobs keep their snapshot. Deleting a missing ID does nothing. */
+    request: [id: string]
+    response: void
+  }
+  [IpcChannel.JobsList]: {
+    request: []
+    /** Newest first. */
+    response: Job[]
+  }
+  [IpcChannel.JobsGet]: {
+    request: [id: string]
+    /** `null` if no job has this ID. */
+    response: Job | null
+  }
+  [IpcChannel.JobsCreate]: {
+    /** Takes a snapshot of the blueprint. Rejects if the name is empty or the blueprint is missing. */
+    request: [input: CreateJobInput]
+    response: Job
+  }
+  [IpcChannel.JobsDelete]: {
+    /** Deleting a missing ID does nothing. */
+    request: [id: string]
+    response: void
+  }
 }
 
 export type IpcRequest<C extends IpcChannel> = IpcContract[C]['request']
@@ -84,5 +134,29 @@ export interface HubApi {
     pullRequests: (
       ...args: IpcRequest<typeof IpcChannel.GitHubPullRequests>
     ) => Promise<IpcResponse<typeof IpcChannel.GitHubPullRequests>>
+  }
+  blueprints: {
+    list: () => Promise<IpcResponse<typeof IpcChannel.BlueprintsList>>
+    get: (
+      ...args: IpcRequest<typeof IpcChannel.BlueprintsGet>
+    ) => Promise<IpcResponse<typeof IpcChannel.BlueprintsGet>>
+    create: (
+      ...args: IpcRequest<typeof IpcChannel.BlueprintsCreate>
+    ) => Promise<IpcResponse<typeof IpcChannel.BlueprintsCreate>>
+    delete: (
+      ...args: IpcRequest<typeof IpcChannel.BlueprintsDelete>
+    ) => Promise<IpcResponse<typeof IpcChannel.BlueprintsDelete>>
+  }
+  jobs: {
+    list: () => Promise<IpcResponse<typeof IpcChannel.JobsList>>
+    get: (
+      ...args: IpcRequest<typeof IpcChannel.JobsGet>
+    ) => Promise<IpcResponse<typeof IpcChannel.JobsGet>>
+    create: (
+      ...args: IpcRequest<typeof IpcChannel.JobsCreate>
+    ) => Promise<IpcResponse<typeof IpcChannel.JobsCreate>>
+    delete: (
+      ...args: IpcRequest<typeof IpcChannel.JobsDelete>
+    ) => Promise<IpcResponse<typeof IpcChannel.JobsDelete>>
   }
 }

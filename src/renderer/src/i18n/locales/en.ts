@@ -1,13 +1,14 @@
 /** English translations. The source of truth for all keys and the fallback language. */
 export const en = {
-  'nav.home': 'Home',
   'nav.overview': 'Overview',
   'nav.settings': 'Settings',
   'nav.devops': 'DevOps',
+  'nav.blueprints': 'Blueprints',
+  'nav.jobs': 'Jobs',
   'nav.main': 'Main navigation',
   'breadcrumb.label': 'Breadcrumb',
 
-  'overview.welcome': 'Welcome to Hub.',
+  'overview.features': 'Features',
 
   'settings.appearance.title': 'Appearance',
   'settings.theme.description': 'Light, dark, or match your system.',
@@ -32,6 +33,13 @@ export const en = {
   'settings.github.notInstalledHint': 'Install the GitHub CLI from',
   'settings.github.error': 'Check failed',
 
+  'common.cancel': 'Cancel',
+  'common.create': 'Create',
+  'common.delete': 'Delete',
+  'common.name': 'Name',
+  'common.created': 'Created',
+  'common.error': 'Something went wrong. Please try again.',
+  'common.loadError': 'Could not load the data.',
   'common.refresh': 'Refresh',
   'common.retry': 'Try again',
 
@@ -42,6 +50,58 @@ export const en = {
   'github.error.notFound': 'The repository was not found or you have no access.',
   'github.error.invalidRequest': 'The request was invalid.',
   'github.error.unknown': 'Something went wrong while loading data from GitHub.',
+
+  'blueprints.title': 'Blueprints',
+  'blueprints.description': 'Templates where things get built and designed.',
+  'blueprints.new': 'New blueprint',
+  'blueprints.list.label': 'Blueprints',
+  'blueprints.empty.title': 'No blueprints yet',
+  'blueprints.empty.description':
+    'A blueprint is a template you design on a canvas. Jobs are created from it.',
+  'blueprints.create.title': 'New blueprint',
+  'blueprints.create.description': 'Give it a name. You can design it on the canvas next.',
+  'blueprints.create.namePlaceholder': 'e.g. Release process',
+  'blueprints.delete.label': 'Delete blueprint {name}',
+  'blueprints.delete.title': 'Delete blueprint?',
+  'blueprints.delete.description':
+    'Are you sure you want to delete “{name}”? This cannot be undone.',
+  'blueprints.notFound.title': 'Blueprint not found',
+  'blueprints.notFound.description': 'It may have been deleted.',
+  'blueprints.backToList': 'Back to Blueprints',
+
+  'canvas.label': 'Blueprint canvas',
+  'canvas.controls': 'Canvas controls',
+  'canvas.zoomIn': 'Zoom in',
+  'canvas.zoomOut': 'Zoom out',
+  'canvas.zoomLevel': 'Zoom {percent} %. Click to reset to 100 %',
+
+  'jobs.title': 'Jobs',
+  'jobs.description': 'Runs of a blueprint. Each job keeps a snapshot of its blueprint.',
+  'jobs.new': 'New job',
+  'jobs.list.label': 'Jobs',
+  'jobs.empty.title': 'No jobs yet',
+  'jobs.empty.description':
+    'A job runs a blueprint. It takes a snapshot, so later changes to the blueprint do not affect it.',
+  'jobs.create.title': 'New job',
+  'jobs.create.description': 'A job takes a snapshot of the blueprint you pick.',
+  'jobs.create.namePlaceholder': 'e.g. Release 1.2',
+  'jobs.create.blueprint': 'Blueprint',
+  'jobs.create.blueprintPlaceholder': 'Choose a blueprint',
+  'jobs.create.noBlueprints': 'There are no blueprints yet. Create one first in',
+  'jobs.delete.label': 'Delete job {name}',
+  'jobs.delete.title': 'Delete job?',
+  'jobs.delete.description': 'Are you sure you want to delete “{name}”? This cannot be undone.',
+  'jobs.basedOn': 'Based on',
+  'jobs.notFound.title': 'Job not found',
+  'jobs.notFound.description': 'It may have been deleted.',
+  'jobs.backToList': 'Back to Jobs',
+  'jobs.detail.created': 'Created',
+  'jobs.detail.blueprint': 'Blueprint',
+  'jobs.detail.snapshotAt': 'Snapshot taken',
+  'jobs.detail.sourceDeleted':
+    'The original blueprint no longer exists. This job keeps its snapshot.',
+  'jobs.detail.openBlueprint': 'Open blueprint',
+  'jobs.detail.placeholder': 'More details for jobs will follow.',
 
   'devops.notConnected.title': 'Connect the GitHub CLI',
   'devops.notConnected.notInstalled':

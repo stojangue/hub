@@ -16,7 +16,7 @@ export function SettingsPage() {
   const { settings, updateSettings } = useSettings()
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8">
+    <div className="space-y-8">
       <SettingsSection title={t('settings.appearance.title')}>
         <SettingRow label={t('settings.theme.label')} description={t('settings.theme.description')}>
           <SegmentedControl<Theme>
