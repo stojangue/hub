@@ -2,14 +2,15 @@ import type { Translations } from './en'
 
 /** German translations. Must define every key that exists in `en`. */
 export const de: Translations = {
-  'nav.home': 'Start',
   'nav.overview': 'Übersicht',
   'nav.settings': 'Einstellungen',
   'nav.devops': 'DevOps',
+  'nav.blueprints': 'Blaupausen',
+  'nav.jobs': 'Aufträge',
   'nav.main': 'Hauptnavigation',
   'breadcrumb.label': 'Brotkrumennavigation',
 
-  'overview.welcome': 'Willkommen bei Hub.',
+  'overview.features': 'Funktionen',
 
   'settings.appearance.title': 'Erscheinungsbild',
   'settings.theme.description': 'Hell, dunkel oder wie dein System.',
@@ -34,6 +35,13 @@ export const de: Translations = {
   'settings.github.notInstalledHint': 'Installiere die GitHub CLI von',
   'settings.github.error': 'Prüfung fehlgeschlagen',
 
+  'common.cancel': 'Abbrechen',
+  'common.create': 'Erstellen',
+  'common.delete': 'Löschen',
+  'common.name': 'Name',
+  'common.created': 'Erstellt',
+  'common.error': 'Etwas ist schiefgelaufen. Bitte versuche es erneut.',
+  'common.loadError': 'Die Daten konnten nicht geladen werden.',
   'common.refresh': 'Aktualisieren',
   'common.retry': 'Erneut versuchen',
 
@@ -45,6 +53,61 @@ export const de: Translations = {
   'github.error.notFound': 'Das Repository wurde nicht gefunden oder du hast keinen Zugriff.',
   'github.error.invalidRequest': 'Die Anfrage war ungültig.',
   'github.error.unknown': 'Beim Laden der Daten von GitHub ist ein Fehler aufgetreten.',
+
+  'blueprints.title': 'Blaupausen',
+  'blueprints.description': 'Vorlagen, in denen Dinge gebaut und gestaltet werden.',
+  'blueprints.new': 'Neue Blaupause',
+  'blueprints.list.label': 'Blaupausen',
+  'blueprints.empty.title': 'Noch keine Blaupausen',
+  'blueprints.empty.description':
+    'Eine Blaupause ist eine Vorlage, die du auf einer Arbeitsfläche gestaltest. Aus ihr werden Aufträge erstellt.',
+  'blueprints.create.title': 'Neue Blaupause',
+  'blueprints.create.description':
+    'Gib ihr einen Namen. Danach kannst du sie auf der Arbeitsfläche gestalten.',
+  'blueprints.create.namePlaceholder': 'z. B. Release-Prozess',
+  'blueprints.delete.label': 'Blaupause {name} löschen',
+  'blueprints.delete.title': 'Blaupause löschen?',
+  'blueprints.delete.description':
+    'Möchtest du „{name}“ wirklich löschen? Das lässt sich nicht rückgängig machen.',
+  'blueprints.notFound.title': 'Blaupause nicht gefunden',
+  'blueprints.notFound.description': 'Sie wurde möglicherweise gelöscht.',
+  'blueprints.backToList': 'Zurück zu den Blaupausen',
+
+  'canvas.label': 'Arbeitsfläche der Blaupause',
+  'canvas.controls': 'Steuerung der Arbeitsfläche',
+  'canvas.zoomIn': 'Vergrößern',
+  'canvas.zoomOut': 'Verkleinern',
+  'canvas.zoomLevel': 'Zoom {percent} %. Klicken, um auf 100 % zurückzusetzen',
+
+  'jobs.title': 'Aufträge',
+  'jobs.description':
+    'Ausführungen einer Blaupause. Jeder Auftrag behält einen Schnappschuss seiner Blaupause.',
+  'jobs.new': 'Neuer Auftrag',
+  'jobs.list.label': 'Aufträge',
+  'jobs.empty.title': 'Noch keine Aufträge',
+  'jobs.empty.description':
+    'Ein Auftrag führt eine Blaupause aus. Er nimmt einen Schnappschuss, damit spätere Änderungen an der Blaupause ihn nicht beeinflussen.',
+  'jobs.create.title': 'Neuer Auftrag',
+  'jobs.create.description': 'Ein Auftrag nimmt einen Schnappschuss der gewählten Blaupause.',
+  'jobs.create.namePlaceholder': 'z. B. Release 1.2',
+  'jobs.create.blueprint': 'Blaupause',
+  'jobs.create.blueprintPlaceholder': 'Blaupause wählen',
+  'jobs.create.noBlueprints': 'Es gibt noch keine Blaupausen. Erstelle zuerst eine unter',
+  'jobs.delete.label': 'Auftrag {name} löschen',
+  'jobs.delete.title': 'Auftrag löschen?',
+  'jobs.delete.description':
+    'Möchtest du „{name}“ wirklich löschen? Das lässt sich nicht rückgängig machen.',
+  'jobs.basedOn': 'Basiert auf',
+  'jobs.notFound.title': 'Auftrag nicht gefunden',
+  'jobs.notFound.description': 'Er wurde möglicherweise gelöscht.',
+  'jobs.backToList': 'Zurück zu den Aufträgen',
+  'jobs.detail.created': 'Erstellt',
+  'jobs.detail.blueprint': 'Blaupause',
+  'jobs.detail.snapshotAt': 'Schnappschuss vom',
+  'jobs.detail.sourceDeleted':
+    'Die ursprüngliche Blaupause existiert nicht mehr. Dieser Auftrag behält seinen Schnappschuss.',
+  'jobs.detail.openBlueprint': 'Blaupause öffnen',
+  'jobs.detail.placeholder': 'Weitere Details zu Aufträgen folgen.',
 
   'devops.notConnected.title': 'GitHub CLI verbinden',
   'devops.notConnected.notInstalled':

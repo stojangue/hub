@@ -5,6 +5,11 @@ export interface RouteHandle {
   /** Translation key of the label shown in the breadcrumbs. */
   crumb?: TranslationKey
   /**
+   * The page sets the breadcrumb label itself with `useBreadcrumbLabel`,
+   * e.g. to show the name of an item. Used instead of `crumb`.
+   */
+  dynamicCrumb?: boolean
+  /**
    * `fill` gives the page the full content area without padding or outer scrolling,
    * for layouts with their own scroll regions. Defaults to a padded, scrolling page.
    */

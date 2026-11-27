@@ -25,3 +25,8 @@ export function formatDateTime(iso: string, language: Language): string {
     new Date(iso),
   )
 }
+
+/** Formats a timestamp as a date only, e.g. "27 Nov 2026". */
+export function formatDate(iso: string, language: Language): string {
+  return new Intl.DateTimeFormat(language, { dateStyle: 'medium' }).format(new Date(iso))
+}
