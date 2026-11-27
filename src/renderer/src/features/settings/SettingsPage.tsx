@@ -2,6 +2,7 @@ import { languages, themes, type Language, type Theme } from '@shared/settings'
 import { SegmentedControl } from '@renderer/components/SegmentedControl'
 import { languageNames, useT, type TranslationKey } from '@renderer/i18n'
 import { useSettings } from '@renderer/settings/context'
+import { GitHubIntegrationRow } from './components/GitHubIntegrationRow'
 import { SettingRow, SettingsSection } from './components/SettingsSection'
 
 const themeLabelKeys: Record<Theme, TranslationKey> = {
@@ -42,6 +43,10 @@ export function SettingsPage() {
             onChange={(language) => void updateSettings({ language })}
           />
         </SettingRow>
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.integrations.title')}>
+        <GitHubIntegrationRow />
       </SettingsSection>
     </div>
   )

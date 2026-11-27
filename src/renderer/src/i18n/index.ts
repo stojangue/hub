@@ -14,15 +14,28 @@ export const languageNames: Record<Language, string> = {
   de: 'Deutsch',
 }
 
-export function translate(language: Language, key: TranslationKey): string {
-  return dictionaries[language][key] ?? en[key]
+/** Values for `{name}` placeholders in a translation. */
+export type TranslationParams = Record<string, string | number>
+
+export type TranslateFn = (key: TranslationKey, params?: TranslationParams) => string
+
+export function translate(
+  language: Language,
+  key: TranslationKey,
+  params?: TranslationParams,
+): string {
+  const text = dictionaries[language][key] ?? en[key]
+  if (!params) return text
+  return text.replace(/\{(\w+)\}/g, (match, name: string) =>
+    name in params ? String(params[name]) : match,
+  )
 }
 
 /** Returns a translate function for the current language. Re-renders when the language changes. */
-export function useT(): (key: TranslationKey) => string {
+export function useT(): TranslateFn {
   const { settings } = useSettings()
   return useCallback(
-    (key: TranslationKey) => translate(settings.language, key),
+    (key: TranslationKey, params?: TranslationParams) => translate(settings.language, key, params),
     [settings.language],
   )
 }
