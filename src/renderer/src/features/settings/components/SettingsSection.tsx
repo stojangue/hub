@@ -24,7 +24,7 @@ export function SettingsSection({ title, children }: SettingsSectionProps) {
 interface SettingRowProps {
   label: string
   /** One short sentence on what the setting does. */
-  description?: string
+  description?: ReactNode
   /** The control for this setting, aligned to the right. */
   children: ReactNode
 }
@@ -34,7 +34,7 @@ export function SettingRow({ label, description, children }: SettingRowProps) {
     <div className="flex min-h-12 items-center justify-between gap-6 px-4 py-3">
       <div className="min-w-0">
         <div className="font-medium">{label}</div>
-        {description && <p className="mt-0.5 text-[0.8125rem] text-muted">{description}</p>}
+        {description && <div className="mt-0.5 text-[0.8125rem] text-muted">{description}</div>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>

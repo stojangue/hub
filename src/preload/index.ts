@@ -13,6 +13,12 @@ const api: HubApi = {
     get: () => invoke(IpcChannel.SettingsGet),
     set: (patch) => invoke(IpcChannel.SettingsSet, patch),
   },
+  github: {
+    status: () => invoke(IpcChannel.GitHubStatus),
+    repos: () => invoke(IpcChannel.GitHubRepos),
+    issues: (query) => invoke(IpcChannel.GitHubIssues, query),
+    pullRequests: (query) => invoke(IpcChannel.GitHubPullRequests, query),
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

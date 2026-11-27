@@ -1,5 +1,6 @@
 import { createHashRouter, Navigate } from 'react-router'
 import { AppShell } from '@renderer/layouts/AppShell'
+import { DevOpsPage } from '@renderer/features/devops'
 import { OverviewPage } from '@renderer/features/overview'
 import { SettingsPage } from '@renderer/features/settings'
 import type { RouteHandle } from '@renderer/lib/route-handle'
@@ -15,6 +16,11 @@ export const router = createHashRouter([
         path: 'overview',
         element: <OverviewPage />,
         handle: { crumb: 'nav.overview' } satisfies RouteHandle,
+      },
+      {
+        path: 'devops',
+        element: <DevOpsPage />,
+        handle: { crumb: 'nav.devops', layout: 'fill' } satisfies RouteHandle,
       },
       {
         path: 'settings',

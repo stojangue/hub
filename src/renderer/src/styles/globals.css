@@ -14,6 +14,11 @@
   --color-muted: oklch(0.55 0.01 265);
   --color-accent: oklch(0.55 0.2 260);
   --color-accent-soft: oklch(0.93 0.04 260);
+  /* Status colors, e.g. for badges. Use with an opacity modifier for soft backgrounds. */
+  --color-success: oklch(0.55 0.15 150);
+  --color-warning: oklch(0.6 0.14 70);
+  --color-danger: oklch(0.56 0.2 25);
+  --color-merged: oklch(0.53 0.2 300);
 
   --spacing-sidebar: 15rem;
   /* Height of the area above the sidebar nav that holds the macOS window buttons. */
@@ -29,6 +34,10 @@
     --color-muted: oklch(0.68 0.008 265);
     --color-accent: oklch(0.75 0.13 255);
     --color-accent-soft: oklch(0.32 0.06 260);
+    --color-success: oklch(0.74 0.15 150);
+    --color-warning: oklch(0.8 0.13 80);
+    --color-danger: oklch(0.72 0.17 25);
+    --color-merged: oklch(0.74 0.15 300);
   }
 }
 
