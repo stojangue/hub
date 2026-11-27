@@ -1,31 +1,13 @@
-import type { ReactNode } from 'react'
 import { languages, themes, type Language, type Theme } from '@shared/settings'
 import { SegmentedControl } from '@renderer/components/SegmentedControl'
 import { languageNames, useT, type TranslationKey } from '@renderer/i18n'
 import { useSettings } from '@renderer/settings/context'
+import { SettingRow, SettingsSection } from './components/SettingsSection'
 
 const themeLabelKeys: Record<Theme, TranslationKey> = {
-  light: 'settings.appearance.light',
-  dark: 'settings.appearance.dark',
-  system: 'settings.appearance.system',
-}
-
-interface SettingRowProps {
-  label: string
-  description: string
-  children: ReactNode
-}
-
-function SettingRow({ label, description, children }: SettingRowProps) {
-  return (
-    <div className="flex items-center justify-between gap-8 py-5">
-      <div className="min-w-0 space-y-1">
-        <h2 className="font-medium">{label}</h2>
-        <p className="text-muted">{description}</p>
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  )
+  light: 'settings.theme.light',
+  dark: 'settings.theme.dark',
+  system: 'settings.theme.system',
 }
 
 export function SettingsPage() {
@@ -33,28 +15,25 @@ export function SettingsPage() {
   const { settings, updateSettings } = useSettings()
 
   return (
-    <section className="max-w-3xl space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">{t('settings.title')}</h1>
-
-      <div className="divide-y divide-border border-y border-border">
-        <SettingRow
-          label={t('settings.appearance.label')}
-          description={t('settings.appearance.description')}
-        >
+    <div className="mx-auto max-w-2xl space-y-8">
+      <SettingsSection title={t('settings.appearance.title')}>
+        <SettingRow label={t('settings.theme.label')} description={t('settings.theme.description')}>
           <SegmentedControl<Theme>
-            label={t('settings.appearance.label')}
+            label={t('settings.theme.label')}
             value={settings.theme}
             options={themes.map((theme) => ({ value: theme, label: t(themeLabelKeys[theme]) }))}
             onChange={(theme) => void updateSettings({ theme })}
           />
         </SettingRow>
+      </SettingsSection>
 
+      <SettingsSection title={t('settings.language.title')}>
         <SettingRow
-          label={t('settings.language.label')}
-          description={t('settings.language.description')}
+          label={t('settings.appLanguage.label')}
+          description={t('settings.appLanguage.description')}
         >
           <SegmentedControl<Language>
-            label={t('settings.language.label')}
+            label={t('settings.appLanguage.label')}
             value={settings.language}
             options={languages.map((language) => ({
               value: language,
@@ -63,7 +42,7 @@ export function SettingsPage() {
             onChange={(language) => void updateSettings({ language })}
           />
         </SettingRow>
-      </div>
-    </section>
+      </SettingsSection>
+    </div>
   )
 }

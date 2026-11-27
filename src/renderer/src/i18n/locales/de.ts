@@ -8,16 +8,16 @@ export const de: Translations = {
   'nav.main': 'Hauptnavigation',
   'breadcrumb.label': 'Brotkrumennavigation',
 
-  'overview.title': 'Übersicht',
   'overview.welcome': 'Willkommen bei Hub.',
 
-  'settings.title': 'Einstellungen',
-  'settings.appearance.label': 'Erscheinungsbild',
-  'settings.appearance.description':
-    'Wähle ein helles oder dunkles Design oder folge automatisch dem macOS-Erscheinungsbild.',
-  'settings.appearance.light': 'Hell',
-  'settings.appearance.dark': 'Dunkel',
-  'settings.appearance.system': 'System',
-  'settings.language.label': 'Sprache',
-  'settings.language.description': 'Die Sprache, die in der gesamten App verwendet wird.',
+  'settings.appearance.title': 'Erscheinungsbild',
+  'settings.theme.description': 'Hell, dunkel oder wie dein System.',
+  'settings.theme.label': 'Design',
+  'settings.theme.light': 'Hell',
+  'settings.theme.dark': 'Dunkel',
+  'settings.theme.system': 'System',
+
+  'settings.language.title': 'Sprache',
+  'settings.appLanguage.description': 'Für alle Texte in Hub.',
+  'settings.appLanguage.label': 'App-Sprache',
 }

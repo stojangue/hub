@@ -6,18 +6,18 @@ export const en = {
   'nav.main': 'Main navigation',
   'breadcrumb.label': 'Breadcrumb',
 
-  'overview.title': 'Overview',
   'overview.welcome': 'Welcome to Hub.',
 
-  'settings.title': 'Settings',
-  'settings.appearance.label': 'Appearance',
-  'settings.appearance.description':
-    'Choose a light or dark look, or follow the macOS appearance automatically.',
-  'settings.appearance.light': 'Light',
-  'settings.appearance.dark': 'Dark',
-  'settings.appearance.system': 'System',
-  'settings.language.label': 'Language',
-  'settings.language.description': 'The language used throughout the app.',
+  'settings.appearance.title': 'Appearance',
+  'settings.theme.description': 'Light, dark, or match your system.',
+  'settings.theme.label': 'Theme',
+  'settings.theme.light': 'Light',
+  'settings.theme.dark': 'Dark',
+  'settings.theme.system': 'System',
+
+  'settings.language.title': 'Language',
+  'settings.appLanguage.description': 'Used for all text in Hub.',
+  'settings.appLanguage.label': 'App language',
 } as const
 
 export type TranslationKey = keyof typeof en
