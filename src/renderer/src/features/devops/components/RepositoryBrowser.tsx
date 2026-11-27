@@ -36,7 +36,11 @@ export function RepositoryBrowser() {
       <RepositoryList state={repositories} selected={selected?.fullName} onSelect={select} />
       <div className="min-w-0 flex-1">
         {selected ? (
-          <RepositoryDetail key={selected.fullName} repository={selected} />
+          <RepositoryDetail
+            key={selected.fullName}
+            repository={selected}
+            onRefreshRepository={repositories.reload}
+          />
         ) : (
           !repositories.loading &&
           !repositories.error && (

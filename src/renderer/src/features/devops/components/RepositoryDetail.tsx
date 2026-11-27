@@ -41,7 +41,13 @@ function parseStateFilter(value: string | null): ItemStateFilter {
     : 'open'
 }
 
-export function RepositoryDetail({ repository }: { repository: Repository }) {
+interface RepositoryDetailProps {
+  repository: Repository
+  /** Reloads the repository data, which holds the open counts shown in the tabs. */
+  onRefreshRepository: () => void
+}
+
+export function RepositoryDetail({ repository, onRefreshRepository }: RepositoryDetailProps) {
   const t = useT()
   const [searchParams, setSearchParams] = useSearchParams()
   // Tab and filter live in the URL and stay the same when another repository is selected.
@@ -124,6 +130,7 @@ export function RepositoryDetail({ repository }: { repository: Repository }) {
         {tab === 'issues' ? (
           <ItemPanel
             load={loadIssues}
+            onRefresh={onRefreshRepository}
             stateFilter={stateFilter}
             onStateFilterChange={(value) => setParam('state', value)}
             emptyKey="devops.issues.empty"
@@ -132,6 +139,7 @@ export function RepositoryDetail({ repository }: { repository: Repository }) {
         ) : (
           <ItemPanel
             load={loadPullRequests}
+            onRefresh={onRefreshRepository}
             stateFilter={stateFilter}
             onStateFilterChange={(value) => setParam('state', value)}
             emptyKey="devops.pulls.empty"
@@ -145,6 +153,8 @@ export function RepositoryDetail({ repository }: { repository: Repository }) {
 
 interface ItemPanelProps<T> {
   load: () => Promise<ItemList<T>>
+  /** Called alongside the item reload, so data outside the panel (tab counts) stays current. */
+  onRefresh: () => void
   stateFilter: ItemStateFilter
   onStateFilterChange: (value: ItemStateFilter) => void
   emptyKey: TranslationKey
@@ -153,6 +163,7 @@ interface ItemPanelProps<T> {
 
 function ItemPanel<T>({
   load,
+  onRefresh,
   stateFilter,
   onStateFilterChange,
   emptyKey,
@@ -160,6 +171,11 @@ function ItemPanel<T>({
 }: ItemPanelProps<T>) {
   const t = useT()
   const { data, error, loading, reloading, reload } = useAsync(load)
+
+  function refresh() {
+    reload()
+    onRefresh()
+  }
 
   return (
     <>
@@ -173,7 +189,7 @@ function ItemPanel<T>({
           }))}
           onChange={onStateFilterChange}
         />
-        <Button onClick={reload} disabled={loading || reloading}>
+        <Button onClick={refresh} disabled={loading || reloading}>
           <RefreshCw aria-hidden className={cn('size-3.5', reloading && 'animate-spin')} />
           {t('common.refresh')}
         </Button>
@@ -184,7 +200,7 @@ function ItemPanel<T>({
           {loading ? (
             <ItemListSkeleton />
           ) : error ? (
-            <GitHubErrorState error={error} onRetry={reload} retrying={reloading} />
+            <GitHubErrorState error={error} onRetry={refresh} retrying={reloading} />
           ) : !data || data.items.length === 0 ? (
             <EmptyState icon={Inbox} title={t(emptyKey)} />
           ) : (
