@@ -1,10 +1,10 @@
-import { app, BrowserWindow, nativeTheme } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { registerIpc } from './ipc'
+import { loadSettings } from './settings'
 import { createMainWindow } from './window'
 
-// Dark appearance for now; a theme setting will replace this later.
-// Drives both the native window chrome and `prefers-color-scheme` in the renderer.
-nativeTheme.themeSource = 'dark'
+// Applies the stored theme before any window exists, so there is no flash of the wrong theme.
+loadSettings()
 
 app.whenReady().then(() => {
   registerIpc()
