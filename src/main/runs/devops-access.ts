@@ -141,6 +141,9 @@ export function allowedTools(config: AgentConfig, worktree: GitTarget | null): s
     ...prefixes.map((command) => `Bash(${command} *)`),
     // Without ` *`, a rule matches only the command exactly as written.
     ...exact.map((command) => `Bash(${command})`),
+    // Skills, e.g. a review skill named in the instructions. Loading one only adds its
+    // instructions; the commands it runs still need their own permission.
+    'Skill',
   ]
 }
 
