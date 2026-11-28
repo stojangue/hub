@@ -98,6 +98,11 @@ interface ActiveRun {
   run: JobRun
   job: Job
   processes: Map<string, ChildProcess>
+  /**
+   * Steps shown as running that have no process yet, e.g. while their worktree is brought up
+   * to date; the run is not finished while there are any.
+   */
+  preparing: Set<string>
   stopping: boolean
   /** Set once the run is being finished, e.g. while its worktrees are removed. */
   finishing: boolean
@@ -723,6 +728,7 @@ async function prepareAndStart(jobId: string): Promise<StartRunResult> {
     run,
     job,
     processes: new Map(),
+    preparing: new Set(),
     stopping: false,
     finishing: false,
     loopsClosed: new Set(),
@@ -1013,6 +1019,7 @@ async function startSwitch(
   node: Extract<BlueprintNode, { type: 'switch' }>,
 ): Promise<void> {
   // Shown as running while the pull request is loaded.
+  entry.preparing.add(step.id)
   updateAgent(entry, step.id, { status: 'running', startedAt: new Date().toISOString() })
   activity(entry, 'agentStarted', step.id)
   const workItem = workItemOf(entry.job, node.id)
@@ -1026,6 +1033,7 @@ async function startSwitch(
   } catch (error) {
     console.error(`Could not load the pull request for switch ${node.id}`, error)
   }
+  entry.preparing.delete(step.id)
   // The run may have been stopped meanwhile; then no process is started.
   if (entry.stopping || active.get(entry.job.id) !== entry) {
     agentFinished(entry, step, { stopped: true })
@@ -1050,15 +1058,25 @@ async function startSwitch(
 function startAgent(entry: ActiveRun, step: RunPlanStep): void {
   const content = entry.job.blueprint.content
   const node = content.nodes.find((candidate) => candidate.id === step.nodeId)
-  if (node?.type === 'switch') {
-    void startSwitch(entry, step, node)
-    return
-  }
-  if (node?.type !== 'agent') {
+  if (node?.type !== 'switch' && node?.type !== 'agent') {
     updateAgent(entry, step.id, { status: 'failed', error: 'Not an agent.' })
     return
   }
-  void startAgentNode(entry, step, node)
+  const start =
+    node.type === 'switch' ? startSwitch(entry, step, node) : startAgentNode(entry, step, node)
+  // An unexpected error while preparing must not leave the step, and so the run, running.
+  start.catch((error: unknown) => {
+    entry.preparing.delete(step.id)
+    const running = entry.run.agents[step.id]?.status === 'running'
+    if (running && !entry.processes.has(step.id)) {
+      agentFinished(entry, step, { failed: String(error) })
+    }
+  })
+}
+
+/** Whether no step of the run has a process or is still getting ready for one. */
+function idle(entry: ActiveRun): boolean {
+  return entry.processes.size === 0 && entry.preparing.size === 0
 }
 
 /** Syncs of a worktree in progress, by its root, so agents starting together share one. */
@@ -1099,6 +1117,7 @@ async function startAgentNode(
   node: Extract<BlueprintNode, { type: 'agent' }>,
 ): Promise<void> {
   // Shown as running while the branch is brought up to date.
+  entry.preparing.add(step.id)
   updateAgent(entry, step.id, { status: 'running', startedAt: new Date().toISOString() })
   activity(entry, 'agentStarted', step.id)
 
@@ -1126,14 +1145,16 @@ async function startAgentNode(
   } catch (error) {
     console.error(`Could not prepare agent ${step.id}`, error)
   }
+  // Another agent may have begun syncing the worktree meanwhile; its files settle first.
+  if (worktree) await syncs.get(worktree.root)?.catch(() => null)
+
+  // From here on the step has a process or is finished, without waiting in between.
+  entry.preparing.delete(step.id)
   // The run may have been stopped meanwhile; then no process is started.
   if (entry.stopping || active.get(entry.job.id) !== entry) {
     agentFinished(entry, step, { stopped: true })
     return
   }
-
-  // Another agent may have begun syncing the worktree meanwhile; its files settle first.
-  if (worktree) await syncs.get(worktree.root)?.catch(() => null)
 
   const base = {
     folder,
@@ -1360,7 +1381,7 @@ function agentFinished(
   }
 
   if (entry.stopping) {
-    if (entry.processes.size === 0) void finish(entry, 'stopped')
+    if (idle(entry)) void finish(entry, 'stopped')
   } else {
     schedule(entry)
   }
@@ -1424,7 +1445,8 @@ export async function stopJob(jobId: unknown): Promise<void> {
   for (const agent of Object.values(entry.run.agents)) {
     if (agent.status === 'waiting') updateAgent(entry, agent.stepId, { status: 'stopped' })
   }
-  if (entry.processes.size === 0) {
+  // Steps still getting ready see the stop once they are, and finish the run if they are last.
+  if (idle(entry)) {
     await finish(entry, 'stopped')
     return
   }
