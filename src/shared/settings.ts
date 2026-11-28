@@ -3,6 +3,15 @@
  * Must stay free of runtime dependencies on Node or the DOM.
  */
 
+import {
+  agentDevOpsAccess,
+  agentEfforts,
+  agentModels,
+  type AgentDevOpsAccess,
+  type AgentEffort,
+  type AgentModel,
+} from './blocks'
+
 export const themes = ['light', 'dark', 'system'] as const
 export type Theme = (typeof themes)[number]
 
@@ -12,11 +21,20 @@ export type Language = (typeof languages)[number]
 export interface Settings {
   theme: Theme
   language: Language
+  /** Model new agent blocks start with. */
+  agentModel: AgentModel
+  /** Effort new agent blocks start with. */
+  agentEffort: AgentEffort
+  /** DevOps access new agent blocks start with. */
+  agentDevOps: AgentDevOpsAccess
 }
 
 export const defaultSettings: Settings = {
   theme: 'system',
   language: 'en',
+  agentModel: 'default',
+  agentEffort: 'default',
+  agentDevOps: 'read',
 }
 
 function isOneOf<T extends string>(options: readonly T[], value: unknown): value is T {
@@ -30,5 +48,14 @@ export function sanitizeSettings(value: unknown, fallback: Settings = defaultSet
   return {
     theme: isOneOf(themes, input['theme']) ? input['theme'] : fallback.theme,
     language: isOneOf(languages, input['language']) ? input['language'] : fallback.language,
+    agentModel: isOneOf(agentModels, input['agentModel'])
+      ? input['agentModel']
+      : fallback.agentModel,
+    agentEffort: isOneOf(agentEfforts, input['agentEffort'])
+      ? input['agentEffort']
+      : fallback.agentEffort,
+    agentDevOps: isOneOf(agentDevOpsAccess, input['agentDevOps'])
+      ? input['agentDevOps']
+      : fallback.agentDevOps,
   }
 }

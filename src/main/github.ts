@@ -4,7 +4,6 @@
  */
 
 import { execFile, type ExecException } from 'node:child_process'
-import { delimiter } from 'node:path'
 import type {
   CheckStatus,
   GitHubAccount,
@@ -23,6 +22,7 @@ import type {
   ReviewStatus,
 } from '@shared/github'
 import { itemStateFilters } from '@shared/github'
+import { cliPath, firstLine } from './cli-env'
 
 const COMMAND_TIMEOUT_MS = 30_000
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024
@@ -31,20 +31,10 @@ const ITEM_LIMIT = 100
 /** Repositories are loaded in pages of 100; this caps the total at 1000. */
 const MAX_REPO_PAGES = 10
 
-/**
- * Apps started from the macOS Finder or Dock do not inherit the shell's PATH, so the usual
- * install locations of `gh` are appended.
- */
-const fallbackPaths =
-  process.platform === 'win32'
-    ? []
-    : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/home/linuxbrew/.linuxbrew/bin']
-
 function ghEnv(): NodeJS.ProcessEnv {
-  const path = [process.env['PATH'], ...fallbackPaths].filter(Boolean).join(delimiter)
   return {
     ...process.env,
-    PATH: path,
+    PATH: cliPath(),
     // Never wait for input, never print colors or update notices into the parsed output.
     GH_PROMPT_DISABLED: '1',
     GH_NO_UPDATE_NOTIFIER: '1',
@@ -97,15 +87,6 @@ function classifyError(error: ExecException, stderr: string): GitHubError {
     return fail('network')
   }
   return fail('unknown')
-}
-
-function firstLine(text: string): string {
-  return (
-    text
-      .split('\n')
-      .map((line) => line.trim())
-      .find(Boolean) ?? ''
-  )
 }
 
 /** Runs `gh` with the given arguments (never through a shell) and returns stdout. */
@@ -464,3 +445,41 @@ export const getIssues = (query: unknown): Promise<GitHubResult<ItemList<Issue>>
 
 export const getPullRequests = (query: unknown): Promise<GitHubResult<ItemList<PullRequest>>> =>
   toResult(() => loadPullRequests(query))
+
+/** What an agent reads of an issue: its description, labels and discussion. */
+export interface IssueContent {
+  state: string
+  body: string
+  labels: string[]
+  comments: { author: string; createdAt: string; body: string }[]
+}
+
+interface RawIssueContent {
+  state?: string
+  body?: string
+  labels?: { name?: string }[]
+  comments?: { author?: { login?: string } | null; createdAt?: string; body?: string }[]
+}
+
+/** Loads an issue's full content for the agents of a job. Throws if `gh` fails. */
+export async function getIssueContent(repository: string, number: number): Promise<IssueContent> {
+  const raw = await runGhJson<RawIssueContent>([
+    'issue',
+    'view',
+    String(number),
+    '--repo',
+    repository,
+    '--json',
+    'state,body,labels,comments',
+  ])
+  return {
+    state: raw.state ?? '',
+    body: raw.body ?? '',
+    labels: (raw.labels ?? []).map((label) => label.name ?? '').filter(Boolean),
+    comments: (raw.comments ?? []).map((comment) => ({
+      author: comment.author?.login ?? 'unknown',
+      createdAt: comment.createdAt ?? '',
+      body: comment.body ?? '',
+    })),
+  }
+}

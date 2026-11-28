@@ -1,6 +1,6 @@
 import { DraftingCompass, Plus, ClipboardList } from 'lucide-react'
 import { useState } from 'react'
-import type { Job } from '@shared/jobs'
+import { jobStatus, type Job } from '@shared/jobs'
 import { Button } from '@renderer/components/Button'
 import { ConfirmDialog } from '@renderer/components/ConfirmDialog'
 import { EmptyState } from '@renderer/components/EmptyState'
@@ -11,6 +11,8 @@ import { useT } from '@renderer/i18n'
 import { api } from '@renderer/lib/api'
 import { CreateJobDialog } from './components/CreateJobDialog'
 import { useJobs } from './queries'
+import { jobStatusStyles } from './run/status-styles'
+import { StatusIcon } from './run/status'
 
 export function JobsPage() {
   const t = useT()
@@ -50,6 +52,8 @@ export function JobsPage() {
               name={job.name}
               meta={
                 <span className="inline-flex items-center gap-1">
+                  <StatusIcon style={jobStatusStyles[jobStatus(job)]} className="size-3" />
+                  <span className="mr-1.5">{t(jobStatusStyles[jobStatus(job)].labelKey)}</span>
                   <DraftingCompass aria-hidden className="size-3" />
                   <span className="sr-only">{t('jobs.basedOn')}: </span>
                   {job.blueprint.name}

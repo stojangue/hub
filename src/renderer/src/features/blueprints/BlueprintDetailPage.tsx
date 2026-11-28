@@ -5,7 +5,7 @@ import { EmptyState } from '@renderer/components/EmptyState'
 import { LinkButton } from '@renderer/components/LinkButton'
 import { LoadErrorState } from '@renderer/components/LoadErrorState'
 import { useT } from '@renderer/i18n'
-import { BlueprintCanvas } from './components/BlueprintCanvas'
+import { BlueprintEditor } from './editor/BlueprintEditor'
 import { useBlueprint } from './queries'
 
 export function BlueprintDetailPage() {
@@ -30,5 +30,5 @@ export function BlueprintDetailPage() {
     )
   }
 
-  return <BlueprintCanvas key={blueprint.id} />
+  return <BlueprintEditor key={blueprint.id} blueprint={blueprint} />
 }

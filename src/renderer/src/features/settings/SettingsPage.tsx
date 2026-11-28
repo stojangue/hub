@@ -1,7 +1,11 @@
+import type { AgentDevOpsAccess, AgentEffort, AgentModel } from '@shared/blocks'
 import { languages, themes, type Language, type Theme } from '@shared/settings'
+import { devOpsOptions, effortOptions, modelOptions } from '@renderer/claude/agent-options'
 import { SegmentedControl } from '@renderer/components/SegmentedControl'
+import { Select } from '@renderer/components/Select'
 import { languageNames, useT, type TranslationKey } from '@renderer/i18n'
 import { useSettings } from '@renderer/settings/context'
+import { ClaudeCodeIntegrationRow } from './components/ClaudeCodeIntegrationRow'
 import { GitHubIntegrationRow } from './components/GitHubIntegrationRow'
 import { SettingRow, SettingsSection } from './components/SettingsSection'
 
@@ -45,8 +49,57 @@ export function SettingsPage() {
         </SettingRow>
       </SettingsSection>
 
-      <SettingsSection title={t('settings.integrations.title')}>
+      <SettingsSection title={t('settings.devops.title')}>
         <GitHubIntegrationRow />
+        <SettingRow
+          label={t('settings.agentDevOps.label')}
+          description={t('settings.agentDevOps.description')}
+        >
+          <div className="w-72">
+            <Select
+              value={settings.agentDevOps}
+              options={devOpsOptions(t)}
+              onChange={(agentDevOps) =>
+                void updateSettings({ agentDevOps: agentDevOps as AgentDevOpsAccess })
+              }
+              placeholder={t('agent.devops')}
+            />
+          </div>
+        </SettingRow>
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.ai.title')}>
+        <ClaudeCodeIntegrationRow />
+        <SettingRow
+          label={t('settings.agentModel.label')}
+          description={t('settings.agentModel.description')}
+        >
+          <div className="w-44">
+            <Select
+              value={settings.agentModel}
+              options={modelOptions(t)}
+              onChange={(agentModel) =>
+                void updateSettings({ agentModel: agentModel as AgentModel })
+              }
+              placeholder={t('agent.model')}
+            />
+          </div>
+        </SettingRow>
+        <SettingRow
+          label={t('settings.agentEffort.label')}
+          description={t('settings.agentEffort.description')}
+        >
+          <div className="w-44">
+            <Select
+              value={settings.agentEffort}
+              options={effortOptions(t)}
+              onChange={(agentEffort) =>
+                void updateSettings({ agentEffort: agentEffort as AgentEffort })
+              }
+              placeholder={t('agent.effort')}
+            />
+          </div>
+        </SettingRow>
       </SettingsSection>
     </div>
   )
