@@ -141,10 +141,24 @@ export function allowedTools(config: AgentConfig, worktree: GitTarget | null): s
     ...prefixes.map((command) => `Bash(${command} *)`),
     // Without ` *`, a rule matches only the command exactly as written.
     ...exact.map((command) => `Bash(${command})`),
-    // Skills, e.g. a review skill named in the instructions. Loading one only adds its
-    // instructions; the commands it runs still need their own permission.
-    'Skill',
+    ...namedSkills(config).flatMap((skill) => [`Skill(${skill})`, `Skill(${skill} *)`]),
   ]
+}
+
+/**
+ * Skills the agent may load without approval: plugin skills (`plugin:skill`) named in its
+ * instructions, and only at DevOps write level. A skill's `allowed-tools` lets its commands
+ * run without approval while it is active, so a skill could get around the read level, and
+ * a skill from the work item's repository (`.claude/skills/` on a pull request's branch,
+ * written by whoever wrote the pull request) could run any command here. Project and user
+ * skills have no `plugin:` prefix, so they are never allowed this way.
+ */
+function namedSkills(config: AgentConfig): string[] {
+  if (config.devops !== 'write') return []
+  const names = config.instructions.matchAll(
+    /(?:^|[\s`'"(/])([a-z0-9][a-z0-9_-]*:[a-z0-9][a-z0-9_-]*)(?=$|[\s`'".,;:!?)])/gim,
+  )
+  return [...new Set([...names].map((match) => match[1] ?? '').filter(Boolean))]
 }
 
 /**
