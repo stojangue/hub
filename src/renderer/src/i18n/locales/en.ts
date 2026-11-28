@@ -90,6 +90,7 @@ export const en = {
   'jobs.delete.label': 'Delete job {name}',
   'jobs.delete.title': 'Delete job?',
   'jobs.delete.description': 'Are you sure you want to delete “{name}”? This cannot be undone.',
+  'jobs.delete.running': 'The job is still running. Stop it first to delete it.',
   'jobs.basedOn': 'Based on',
   'jobs.notFound.title': 'Job not found',
   'jobs.notFound.description': 'It may have been deleted.',

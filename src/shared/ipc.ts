@@ -129,7 +129,7 @@ export interface IpcContract {
     response: Job
   }
   [IpcChannel.JobsDelete]: {
-    /** Stops a running job first. Deleting a missing ID does nothing. */
+    /** Rejects while the job is running; stop it first. Deleting a missing ID does nothing. */
     request: [id: string]
     response: void
   }

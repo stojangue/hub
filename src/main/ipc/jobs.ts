@@ -10,6 +10,7 @@ export function registerJobsIpc(): void {
   handle(IpcChannel.JobsCreate, (_event, input) => createJob(input))
   handle(IpcChannel.JobsDelete, async (_event, id) => {
     if (typeof id !== 'string') return
+    // Rejects while the job is running, so nothing writes its run after it was deleted.
     await deleteJobRun(id)
     await deleteJob(id)
   })

@@ -96,6 +96,7 @@ export const de: Translations = {
   'jobs.delete.title': 'Auftrag löschen?',
   'jobs.delete.description':
     'Möchtest du „{name}“ wirklich löschen? Das lässt sich nicht rückgängig machen.',
+  'jobs.delete.running': 'Der Auftrag läuft noch. Stoppe ihn zuerst, um ihn zu löschen.',
   'jobs.basedOn': 'Basiert auf',
   'jobs.notFound.title': 'Auftrag nicht gefunden',
   'jobs.notFound.description': 'Er wurde möglicherweise gelöscht.',
