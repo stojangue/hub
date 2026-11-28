@@ -449,7 +449,8 @@ function buildSwitchPrompt(config: SwitchConfig, input: Omit<AgentRunInput, 'pro
 
 /** The output a switch's answer picks, by the name on its last `OUTPUT:` line. */
 function chosenOutput(config: SwitchConfig, answer: string): SwitchOutput | null {
-  const lines = [...answer.matchAll(/^[\s>*_`]*OUTPUT\s*:\s*(.+?)[\s*_`.]*$/gim)]
+  // Formatting around the name, e.g. `OUTPUT: **Yes**` or `OUTPUT: \`Yes\``, is left out.
+  const lines = [...answer.matchAll(/^[\s>*_`]*OUTPUT[\s*_`]*:[\s*_`]*(.+?)[\s*_`.]*$/gim)]
   const name = lines.at(-1)?.[1]?.trim().toLowerCase()
   if (!name) return null
   return config.outputs.find((output) => output.name.trim().toLowerCase() === name) ?? null
@@ -657,6 +658,38 @@ function toRunWorktree(
 }
 
 /**
+ * The issue worktree made in this start for another folder of the same repository, as seen
+ * from `folder`, or `null` if there is none.
+ */
+async function sharedIssueWorktree(
+  worktrees: Map<string, PullRequestWorktree>,
+  folder: string,
+  item: WorkItem,
+): Promise<PullRequestWorktree | null> {
+  const candidates = [...worktrees.values()].filter(
+    (worktree) => worktree.kind === 'issue' && worktree.pullRequest === item.number,
+  )
+  if (candidates.length === 0) return null
+  const info = await inspectRepository(folder)
+  const other = info && candidates.find((worktree) => worktree.repositoryRoot === info.root)
+  if (!info || !other) return null
+  return {
+    ...other,
+    folder,
+    path: info.prefix ? join(other.root, info.prefix.replace(/\/$/, '')) : other.root,
+  }
+}
+
+/** The worktrees in `worktrees`, each once, though several folders may share one. */
+function distinctWorktrees(worktrees: Map<string, PullRequestWorktree>): PullRequestWorktree[] {
+  const byRoot = new Map<string, PullRequestWorktree>()
+  for (const worktree of worktrees.values()) {
+    if (!byRoot.has(worktree.root)) byRoot.set(worktree.root, worktree)
+  }
+  return [...byRoot.values()]
+}
+
+/**
  * Makes a worktree of each folder that agents use for a pull request. If one fails, the
  * others are removed again and the job does not start.
  */
@@ -681,9 +714,12 @@ async function createWorktrees(
     try {
       if (item.kind === 'issue') {
         if (folderNode.config.workMode === 'direct') continue
+        // The issue's branch can be checked out only once, so folders in the same repository,
+        // e.g. subfolders of a monorepo, share one worktree, each with its own path in it.
+        const shared = await sharedIssueWorktree(worktrees, path, item)
         worktrees.set(
           key,
-          await createIssueWorktree(path, item.repository, item.number, item.title),
+          shared ?? (await createIssueWorktree(path, item.repository, item.number, item.title)),
         )
         continue
       }
@@ -700,7 +736,7 @@ async function createWorktrees(
         ),
       )
     } catch (error) {
-      await Promise.all([...worktrees.values()].map(removePullRequestWorktree))
+      await Promise.all(distinctWorktrees(worktrees).map(removePullRequestWorktree))
       const message = error instanceof Error ? error.message : String(error)
       return { ok: false, problems: [{ code: 'worktreeFailed', nodeId: folderNode.id, message }] }
     }
@@ -1075,14 +1111,18 @@ function agentFinished(
 
 /** Removes the run's worktrees, or keeps those with work that would be lost, and says which. */
 async function removeWorktrees(entry: ActiveRun): Promise<void> {
+  const all = [...entry.worktrees.values()]
   await Promise.all(
-    [...entry.worktrees.values()].map(async (worktree) => {
+    distinctWorktrees(entry.worktrees).map(async (worktree) => {
       const reason = await removePullRequestWorktree(worktree)
-      emit(entry, {
-        type: 'worktree',
-        runId: entry.run.id,
-        worktree: toRunWorktree(worktree, reason ? 'kept' : 'removed', reason),
-      })
+      // Every folder that shared the worktree shows what happened to it.
+      for (const shown of all.filter((other) => other.root === worktree.root)) {
+        emit(entry, {
+          type: 'worktree',
+          runId: entry.run.id,
+          worktree: toRunWorktree(shown, reason ? 'kept' : 'removed', reason),
+        })
+      }
     }),
   )
   entry.worktrees.clear()
