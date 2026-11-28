@@ -38,9 +38,11 @@ import {
   planRun,
   summarizeRun,
   type ActivityKind,
+  type AgentEntry,
   type AgentRun,
   type AgentRunInput,
   type AgentRunStatus,
+  type BackgroundTask,
   type JobRun,
   type JobRunStatus,
   type RunEvent,
@@ -82,6 +84,12 @@ const SAVE_INTERVAL_MS = 1000
 /** How long a stopped process gets to exit before it is killed. */
 const KILL_GRACE_MS = 5000
 const maxStderrLength = 4000
+/** How often an agent's last activity is updated while it works. */
+const ACTIVITY_INTERVAL_MS = 3000
+
+function newBackgroundTask(): BackgroundTask {
+  return { status: 'running', lastActivity: null, lastActivityAt: null, summary: null }
+}
 
 type WorkItemContent =
   { kind: 'issue'; content: IssueContent } | { kind: 'pullRequest'; content: PullRequestContent }
@@ -1209,10 +1217,55 @@ function runProcess(
     stderr = (stderr + chunk.toString('utf8')).slice(-maxStderrLength)
   })
 
+  // Activity is shown with a few seconds' delay at most, so a busy agent is not saved for
+  // every line.
+  let lastActivityShown = 0
+  const subagentShown = new Map<string, number>()
+  const toolEntry = (id: string) => {
+    const tool = entry.run.agents[step.id]?.entries.find((candidate) => candidate.id === id)
+    return tool?.kind === 'tool' ? tool : null
+  }
+  const updateTool = (tool: Extract<AgentEntry, { kind: 'tool' }>) =>
+    emit(entry, { type: 'entry', runId: entry.run.id, stepId: step.id, entry: tool })
+
   if (child.stdout) {
     createInterface({ input: child.stdout }).on('line', (line) => {
+      const now = Date.now()
+      if (now - lastActivityShown >= ACTIVITY_INTERVAL_MS) {
+        lastActivityShown = now
+        updateAgent(entry, step.id, { lastActivityAt: new Date(now).toISOString() })
+      }
       for (const update of parseStreamLine(line)) {
-        if (update.kind === 'entry') {
+        if (update.kind === 'backgroundStarted') {
+          const tool = toolEntry(update.toolUseId)
+          if (tool && !tool.background) {
+            updateTool({ ...tool, background: newBackgroundTask() })
+          }
+        } else if (update.kind === 'subagentActivity') {
+          const tool = toolEntry(update.toolUseId)
+          if (!tool?.background || tool.background.status !== 'running') continue
+          if (now - (subagentShown.get(tool.id) ?? 0) < ACTIVITY_INTERVAL_MS) continue
+          subagentShown.set(tool.id, now)
+          updateTool({
+            ...tool,
+            background: {
+              ...tool.background,
+              lastActivity: update.text,
+              lastActivityAt: new Date(now).toISOString(),
+            },
+          })
+        } else if (update.kind === 'backgroundFinished') {
+          const tool = toolEntry(update.toolUseId)
+          if (!tool) continue
+          updateTool({
+            ...tool,
+            background: {
+              ...(tool.background ?? newBackgroundTask()),
+              status: update.status,
+              summary: update.summary,
+            },
+          })
+        } else if (update.kind === 'entry') {
           emit(entry, { type: 'entry', runId: entry.run.id, stepId: step.id, entry: update.entry })
         } else if (update.kind === 'toolResult') {
           const tool = entry.run.agents[step.id]?.entries.find(
@@ -1237,6 +1290,12 @@ function runProcess(
   })
   child.on('close', (code) => {
     entry.processes.delete(step.id)
+    // Background subagents end with the process.
+    for (const tool of entry.run.agents[step.id]?.entries ?? []) {
+      if (tool.kind === 'tool' && tool.background?.status === 'running') {
+        updateTool({ ...tool, background: { ...tool.background, status: 'stopped' } })
+      }
+    }
     removeScratch()
     const final = result as typeof result
     if (entry.stopping) {

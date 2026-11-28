@@ -292,8 +292,26 @@ export type AgentEntry =
       /** Set once the tool has returned. */
       output?: string
       isError?: boolean
+      /** For a subagent started in the background: how it is doing. */
+      background?: BackgroundTask
     }
   | { id: string; at: string; kind: 'error'; text: string }
+
+export const backgroundTaskStatuses = ['running', 'completed', 'failed', 'stopped'] as const
+export type BackgroundTaskStatus = (typeof backgroundTaskStatuses)[number]
+
+/**
+ * A subagent that works in the background while the agent goes on. Its tool call returns at
+ * once, so this is what shows that it is still working, and what it did last.
+ */
+export interface BackgroundTask {
+  status: BackgroundTaskStatus
+  /** What it did last, e.g. the command it ran, and when. */
+  lastActivity: string | null
+  lastActivityAt: string | null
+  /** What it reported once done. */
+  summary: string | null
+}
 
 export interface AgentRun {
   /** The plan step it belongs to, and its key in `JobRun.agents`. */
@@ -314,6 +332,8 @@ export interface AgentRun {
   chosenOutput: string | null
   error: string | null
   costUsd: number | null
+  /** When Claude Code last printed anything, including its background subagents. */
+  lastActivityAt: string | null
   entries: AgentEntry[]
 }
 
@@ -400,6 +420,7 @@ export function createAgentRun(step: RunPlanStep, nodes: readonly BlueprintNode[
     chosenOutput: null,
     error: null,
     costUsd: null,
+    lastActivityAt: null,
     entries: [],
   }
 }
@@ -554,9 +575,23 @@ function sanitizeEntry(value: unknown): AgentEntry | null {
       input: input['input'] ?? null,
       ...(typeof input['output'] === 'string' ? { output: input['output'] } : {}),
       ...(input['isError'] === true ? { isError: true } : {}),
+      ...sanitizeBackground(input['background']),
     }
   }
   return null
+}
+
+function sanitizeBackground(value: unknown): { background?: BackgroundTask } {
+  const input = asRecord(value)
+  if (!input || !isOneOf(backgroundTaskStatuses, input['status'])) return {}
+  return {
+    background: {
+      status: input['status'],
+      lastActivity: optionalString(input['lastActivity']),
+      lastActivityAt: optionalTimestamp(input['lastActivityAt']),
+      summary: optionalString(input['summary']),
+    },
+  }
 }
 
 function sanitizeInput(value: unknown): AgentRunInput | null {
@@ -600,6 +635,7 @@ function sanitizeAgent(stepId: string, value: unknown): AgentRun | null {
     chosenOutput: optionalString(input['chosenOutput']),
     error: optionalString(input['error']),
     costUsd: typeof input['costUsd'] === 'number' ? input['costUsd'] : null,
+    lastActivityAt: optionalTimestamp(input['lastActivityAt']),
     entries: entries.flatMap((entry) => sanitizeEntry(entry) ?? []),
   }
 }

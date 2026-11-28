@@ -1,10 +1,11 @@
 /**
  * Turns the `--output-format stream-json` messages of the Claude Code CLI into log entries.
- * Only top-level messages are shown; those of subagents are skipped.
+ * Only top-level messages are shown. Of subagents, only what they do last is kept, for those
+ * that work in the background, whose tool call returns at once.
  */
 
 import { randomUUID } from 'node:crypto'
-import type { AgentEntry } from '@shared/runs'
+import type { AgentEntry, BackgroundTaskStatus } from '@shared/runs'
 import { asRecord } from '@shared/validation'
 
 /** Longest tool output kept per call, in characters. */
@@ -16,6 +17,53 @@ export type StreamUpdate =
   /** A tool returned: the entry with this ID gets its output. */
   | { kind: 'toolResult'; toolUseId: string; output: string; isError: boolean }
   | { kind: 'result'; text: string; isError: boolean; costUsd: number | null }
+  /** A subagent started by the tool call with this ID works in the background. */
+  | { kind: 'backgroundStarted'; toolUseId: string }
+  /** A subagent did something: what, in one line. Sent for every subagent, also nested ones. */
+  | { kind: 'subagentActivity'; toolUseId: string; text: string }
+  | {
+      kind: 'backgroundFinished'
+      toolUseId: string
+      status: BackgroundTaskStatus
+      summary: string | null
+    }
+
+const maxActivityLength = 200
+
+function oneLine(text: string): string {
+  const line = text.replace(/\s+/g, ' ').trim()
+  return line.length > maxActivityLength ? `${line.slice(0, maxActivityLength)}…` : line
+}
+
+/** A tool call in one line, e.g. `Bash: Run the tests`. */
+function describeToolUse(name: string, input: unknown): string {
+  const record = asRecord(input) ?? {}
+  const keys = ['description', 'command', 'file_path', 'pattern', 'url', 'query', 'skill']
+  const detail = keys.map((key) => record[key]).find((value) => typeof value === 'string')
+  return oneLine(typeof detail === 'string' ? `${name}: ${detail}` : name)
+}
+
+/** What a subagent's message shows it doing, or `null` if nothing worth showing. */
+function subagentActivity(message: Record<string, unknown>): string | null {
+  const content = asRecord(message['message'])?.['content']
+  if (message['type'] !== 'assistant' || !Array.isArray(content)) return null
+  for (const raw of [...content].reverse()) {
+    const block = asRecord(raw)
+    if (block?.['type'] === 'tool_use' && typeof block['name'] === 'string') {
+      return describeToolUse(block['name'], block['input'])
+    }
+    if (block?.['type'] === 'text' && typeof block['text'] === 'string' && block['text'].trim()) {
+      return oneLine(block['text'])
+    }
+  }
+  return null
+}
+
+function taskStatus(value: unknown): BackgroundTaskStatus {
+  if (value === 'completed') return 'completed'
+  if (value === 'failed') return 'failed'
+  return 'stopped'
+}
 
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}\n…` : text
@@ -65,8 +113,33 @@ export function parseStreamLine(line: string): StreamUpdate[] {
     ]
   }
 
+  // Claude Code reports subagents that work in the background as tasks.
+  if (message['type'] === 'system' && typeof message['tool_use_id'] === 'string') {
+    const toolUseId = message['tool_use_id']
+    if (message['subtype'] === 'task_started' && message['is_backgrounded'] === true) {
+      return [{ kind: 'backgroundStarted', toolUseId }]
+    }
+    if (message['subtype'] === 'task_notification') {
+      const summary = message['summary']
+      return [
+        {
+          kind: 'backgroundFinished',
+          toolUseId,
+          status: taskStatus(message['status']),
+          summary: typeof summary === 'string' && summary.trim() ? summary : null,
+        },
+      ]
+    }
+    return []
+  }
+
   // Messages of subagents carry the ID of the tool call that started them.
-  if (message['parent_tool_use_id']) return []
+  const parent = message['parent_tool_use_id']
+  if (typeof parent === 'string' && parent) {
+    const text = subagentActivity(message)
+    return text ? [{ kind: 'subagentActivity', toolUseId: parent, text }] : []
+  }
+  if (parent) return []
   const content = asRecord(message['message'])?.['content']
   if (!Array.isArray(content)) return []
   const eventId = typeof message['uuid'] === 'string' ? message['uuid'] : randomUUID()
@@ -92,6 +165,16 @@ export function parseStreamLine(line: string): StreamUpdate[] {
               kind: 'tool',
               name: typeof block['name'] === 'string' ? block['name'] : 'Tool',
               input: shortenInput(block['input'] ?? null),
+              ...(asRecord(block['input'])?.['run_in_background'] === true
+                ? {
+                    background: {
+                      status: 'running',
+                      lastActivity: null,
+                      lastActivityAt: null,
+                      summary: null,
+                    },
+                  }
+                : {}),
             },
           },
         ]
