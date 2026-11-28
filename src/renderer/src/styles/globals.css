@@ -19,6 +19,10 @@
   --color-warning: oklch(0.6 0.14 70);
   --color-danger: oklch(0.56 0.2 25);
   --color-merged: oklch(0.53 0.2 300);
+  /* Data types of block ports and the connections between them. */
+  --color-port-folder: oklch(0.62 0.15 65);
+  --color-port-work-item: oklch(0.56 0.15 155);
+  --color-port-result: oklch(0.55 0.2 295);
 
   --spacing-sidebar: 15rem;
   /*
@@ -50,6 +54,9 @@
     --color-warning: oklch(0.8 0.13 80);
     --color-danger: oklch(0.72 0.17 25);
     --color-merged: oklch(0.74 0.15 300);
+    --color-port-folder: oklch(0.8 0.13 75);
+    --color-port-work-item: oklch(0.76 0.14 155);
+    --color-port-result: oklch(0.75 0.15 295);
   }
 }
 

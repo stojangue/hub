@@ -1,5 +1,7 @@
 import { registerAppIpc } from './app'
 import { registerBlueprintsIpc } from './blueprints'
+import { registerClaudeIpc } from './claude'
+import { registerFoldersIpc } from './folders'
 import { registerGitHubIpc } from './github'
 import { registerJobsIpc } from './jobs'
 import { registerSettingsIpc } from './settings'
@@ -9,6 +11,8 @@ export function registerIpc(): void {
   registerAppIpc()
   registerSettingsIpc()
   registerGitHubIpc()
+  registerClaudeIpc()
+  registerFoldersIpc()
   registerBlueprintsIpc()
   registerJobsIpc()
 }

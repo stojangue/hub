@@ -17,13 +17,24 @@ interface ListRowProps {
   /** Accessible name of the delete button, e.g. "Delete blueprint Release". */
   deleteLabel: string
   onDelete: () => void
+  /** Disables the delete button and explains why, e.g. while a job is running. */
+  deleteDisabledReason?: string
 }
 
 /**
  * A clickable list row with a delete action, aligned right and identical across rows.
  * Render inside `<ListRows>`.
  */
-export function ListRow({ to, icon, name, meta, createdAt, deleteLabel, onDelete }: ListRowProps) {
+export function ListRow({
+  to,
+  icon,
+  name,
+  meta,
+  createdAt,
+  deleteLabel,
+  onDelete,
+  deleteDisabledReason,
+}: ListRowProps) {
   const { settings } = useSettings()
   return (
     <li className="group relative flex items-center gap-3 px-4 py-2.5 transition-colors has-[a:focus-visible]:bg-surface hover:bg-surface">
@@ -45,16 +56,20 @@ export function ListRow({ to, icon, name, meta, createdAt, deleteLabel, onDelete
       >
         {formatDate(createdAt, settings.language)}
       </time>
-      <Button
-        variant="ghost"
-        iconOnly
-        onClick={onDelete}
-        aria-label={deleteLabel}
-        title={deleteLabel}
-        className="relative hover:text-danger"
-      >
-        <Trash2 aria-hidden className="size-3.5" />
-      </Button>
+      {/* The wrapper carries the tooltip, since a disabled button gets no pointer events. */}
+      <span className="relative" title={deleteDisabledReason ?? deleteLabel}>
+        <Button
+          variant="ghost"
+          iconOnly
+          onClick={onDelete}
+          disabled={deleteDisabledReason !== undefined}
+          aria-label={deleteLabel}
+          aria-description={deleteDisabledReason}
+          className="hover:text-danger"
+        >
+          <Trash2 aria-hidden className="size-3.5" />
+        </Button>
+      </span>
     </li>
   )
 }

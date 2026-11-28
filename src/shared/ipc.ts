@@ -5,7 +5,8 @@
  * Must stay free of runtime dependencies on Node or the DOM.
  */
 
-import type { Blueprint, CreateBlueprintInput } from './blueprints'
+import type { Blueprint, CreateBlueprintInput, UpdateBlueprintInput } from './blueprints'
+import type { ClaudeCliStatus, ClaudeCliUpdateResult } from './claude'
 import type {
   GitHubResult,
   GitHubStatus,
@@ -16,6 +17,7 @@ import type {
   RepositoryItemsQuery,
 } from './github'
 import type { CreateJobInput, Job } from './jobs'
+import type { JobRun, RunEventMessage, StartRunResult } from './runs'
 import type { Settings } from './settings'
 
 export const IpcChannel = {
@@ -29,12 +31,29 @@ export const IpcChannel = {
   BlueprintsList: 'blueprints:list',
   BlueprintsGet: 'blueprints:get',
   BlueprintsCreate: 'blueprints:create',
+  BlueprintsUpdate: 'blueprints:update',
   BlueprintsDelete: 'blueprints:delete',
   JobsList: 'jobs:list',
   JobsGet: 'jobs:get',
   JobsCreate: 'jobs:create',
   JobsDelete: 'jobs:delete',
+  JobsStart: 'jobs:start',
+  JobsStop: 'jobs:stop',
+  JobsRun: 'jobs:run',
+  ClaudeStatus: 'claude:status',
+  ClaudeUpdate: 'claude:update',
+  FoldersPick: 'folders:pick',
+  FoldersCheck: 'folders:check',
 } as const
+
+/** Channels the main process sends on, without a request. */
+export const IpcEvent = {
+  RunEvent: 'jobs:runEvent',
+} as const
+
+export interface IpcEventContract {
+  [IpcEvent.RunEvent]: RunEventMessage
+}
 
 export type IpcChannel = (typeof IpcChannel)[keyof typeof IpcChannel]
 
@@ -84,6 +103,11 @@ export interface IpcContract {
     request: [input: CreateBlueprintInput]
     response: Blueprint
   }
+  [IpcChannel.BlueprintsUpdate]: {
+    /** Content is sanitized. Rejects if the blueprint is missing. */
+    request: [id: string, input: UpdateBlueprintInput]
+    response: Blueprint
+  }
   [IpcChannel.BlueprintsDelete]: {
     /** Existing jobs keep their snapshot. Deleting a missing ID does nothing. */
     request: [id: string]
@@ -105,9 +129,43 @@ export interface IpcContract {
     response: Job
   }
   [IpcChannel.JobsDelete]: {
-    /** Deleting a missing ID does nothing. */
+    /** Rejects while the job is running; stop it first. Deleting a missing ID does nothing. */
     request: [id: string]
     response: void
+  }
+  [IpcChannel.JobsStart]: {
+    /** Checks the requirements, then starts a run that replaces the previous one. */
+    request: [id: string]
+    response: StartRunResult
+  }
+  [IpcChannel.JobsStop]: {
+    /** Stopping a job that is not running does nothing. */
+    request: [id: string]
+    response: void
+  }
+  [IpcChannel.JobsRun]: {
+    /** The latest run with its logs, or `null` if the job has not run. */
+    request: [id: string]
+    response: JobRun | null
+  }
+  [IpcChannel.ClaudeStatus]: {
+    request: []
+    response: ClaudeCliStatus
+  }
+  [IpcChannel.ClaudeUpdate]: {
+    /** Runs `claude update`, then checks again. */
+    request: []
+    response: ClaudeCliUpdateResult
+  }
+  [IpcChannel.FoldersPick]: {
+    /** Opens the system's folder dialog. `null` if it was cancelled. */
+    request: [defaultPath?: string]
+    response: string | null
+  }
+  [IpcChannel.FoldersCheck]: {
+    /** Whether each path is an existing folder. */
+    request: [paths: string[]]
+    response: Record<string, boolean>
   }
 }
 
@@ -143,6 +201,9 @@ export interface HubApi {
     create: (
       ...args: IpcRequest<typeof IpcChannel.BlueprintsCreate>
     ) => Promise<IpcResponse<typeof IpcChannel.BlueprintsCreate>>
+    update: (
+      ...args: IpcRequest<typeof IpcChannel.BlueprintsUpdate>
+    ) => Promise<IpcResponse<typeof IpcChannel.BlueprintsUpdate>>
     delete: (
       ...args: IpcRequest<typeof IpcChannel.BlueprintsDelete>
     ) => Promise<IpcResponse<typeof IpcChannel.BlueprintsDelete>>
@@ -158,5 +219,28 @@ export interface HubApi {
     delete: (
       ...args: IpcRequest<typeof IpcChannel.JobsDelete>
     ) => Promise<IpcResponse<typeof IpcChannel.JobsDelete>>
+    start: (
+      ...args: IpcRequest<typeof IpcChannel.JobsStart>
+    ) => Promise<IpcResponse<typeof IpcChannel.JobsStart>>
+    stop: (
+      ...args: IpcRequest<typeof IpcChannel.JobsStop>
+    ) => Promise<IpcResponse<typeof IpcChannel.JobsStop>>
+    run: (
+      ...args: IpcRequest<typeof IpcChannel.JobsRun>
+    ) => Promise<IpcResponse<typeof IpcChannel.JobsRun>>
+    /** Calls `listener` for every change to any run. Returns a function that unsubscribes. */
+    onRunEvent: (listener: (message: RunEventMessage) => void) => () => void
+  }
+  claude: {
+    status: () => Promise<IpcResponse<typeof IpcChannel.ClaudeStatus>>
+    update: () => Promise<IpcResponse<typeof IpcChannel.ClaudeUpdate>>
+  }
+  folders: {
+    pick: (
+      ...args: IpcRequest<typeof IpcChannel.FoldersPick>
+    ) => Promise<IpcResponse<typeof IpcChannel.FoldersPick>>
+    check: (
+      ...args: IpcRequest<typeof IpcChannel.FoldersCheck>
+    ) => Promise<IpcResponse<typeof IpcChannel.FoldersCheck>>
   }
 }

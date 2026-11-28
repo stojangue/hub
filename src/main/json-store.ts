@@ -9,6 +9,11 @@ export interface CollectionStore<T extends { id: string }> {
   get: (id: string) => Promise<T | null>
   /** Adds an entry at the front and persists the collection. */
   add: (entry: T) => Promise<T>
+  /**
+   * Replaces an entry with `change(entry)` and persists the collection.
+   * Resolves to the new entry, or `null` if no entry has this ID.
+   */
+  update: (id: string, change: (entry: T) => T) => Promise<T | null>
   /** Removes an entry and persists the collection. Missing IDs are ignored. */
   remove: (id: string) => Promise<void>
 }
@@ -103,6 +108,18 @@ export function createCollectionStore<T extends { id: string }>(
     add: async (entry) => {
       await update((list) => [entry, ...list])
       return entry
+    },
+    update: async (id, change) => {
+      let updated: T | null = null
+      if (!(await load()).some((entry) => entry.id === id)) return null
+      await update((list) =>
+        list.map((entry) => {
+          if (entry.id !== id) return entry
+          updated = change(entry)
+          return updated
+        }),
+      )
+      return updated
     },
     remove: async (id) => {
       if (!(await load()).some((entry) => entry.id === id)) return
