@@ -3,6 +3,7 @@ import {
   CircleCheck,
   CircleDashed,
   CircleSlash,
+  CircleMinus,
   CircleStop,
   CircleX,
   LoaderCircle,
@@ -34,4 +35,5 @@ export const agentStatusStyles: Record<AgentRunStatus, StatusStyle> = {
   failed: { labelKey: 'agents.status.failed', tone: 'danger', icon: CircleX },
   skipped: { labelKey: 'agents.status.skipped', tone: 'neutral', icon: CircleSlash },
   stopped: { labelKey: 'agents.status.stopped', tone: 'warning', icon: Ban },
+  notTaken: { labelKey: 'agents.status.notTaken', tone: 'neutral', icon: CircleMinus },
 }

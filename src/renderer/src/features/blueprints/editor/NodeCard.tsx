@@ -1,7 +1,12 @@
 import { CircleHelp, TriangleAlert } from 'lucide-react'
 import type { PointerEvent } from 'react'
-import { blockDefinitions, isBlockType, type PortDefinition, type PortSide } from '@shared/blocks'
-import type { BlueprintNode, Position, UnsupportedNodeInfo } from '@shared/blueprints'
+import { isBlockType, type PortDefinition, type PortSide } from '@shared/blocks'
+import {
+  nodePorts,
+  type BlueprintNode,
+  type Position,
+  type UnsupportedNodeInfo,
+} from '@shared/blueprints'
 import { useT } from '@renderer/i18n'
 import { cn } from '@renderer/lib/cn'
 import { blockPresentation, dataTypePresentation } from '../blocks'
@@ -58,9 +63,10 @@ export function NodeCard({
 }: NodeCardProps) {
   const t = useT()
   const presentation = blockPresentation[node.type]
-  const { inputs, outputs } = blockDefinitions[node.type]
+  const inputs = nodePorts(node, 'input')
+  const outputs = nodePorts(node, 'output')
   const Icon = presentation.icon
-  const rows = portRows(node.type)
+  const rows = portRows(node)
 
   return (
     <div
@@ -114,10 +120,10 @@ export function NodeCard({
               style={{ height: portRowHeight }}
             >
               <span className="truncate">
-                {input ? t(dataTypePresentation[input.dataType].labelKey) : ''}
+                {input ? (input.label ?? t(dataTypePresentation[input.dataType].labelKey)) : ''}
               </span>
-              <span className="truncate text-right">
-                {output ? t(dataTypePresentation[output.dataType].labelKey) : ''}
+              <span className={cn('truncate text-right', output?.label && 'text-foreground')}>
+                {output ? (output.label ?? t(dataTypePresentation[output.dataType].labelKey)) : ''}
               </span>
             </div>
           )
@@ -130,7 +136,7 @@ export function NodeCard({
           const data = dataTypePresentation[port.dataType]
           const state = highlight(side, port)
           const connected = connectedPorts.has(`${side}:${port.id}`)
-          const label = `${t(data.labelKey)} · ${t(side === 'input' ? 'canvas.port.input' : 'canvas.port.output')}${
+          const label = `${port.label ?? t(data.labelKey)} · ${t(side === 'input' ? 'canvas.port.input' : 'canvas.port.output')}${
             port.multiple ? ` · ${t('canvas.port.multiple')}` : ''
           }`
           return (

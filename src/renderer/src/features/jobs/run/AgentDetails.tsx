@@ -8,6 +8,8 @@ import {
   FilePlus,
   FileText,
   Folder,
+  GitBranch,
+  Split,
   Globe,
   ListTodo,
   LoaderCircle,
@@ -19,7 +21,7 @@ import {
 } from 'lucide-react'
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentPermissionMode } from '@shared/blocks'
-import { incoming, sourceOf, type BlueprintNode } from '@shared/blueprints'
+import { effectiveSource, incoming, type BlueprintNode } from '@shared/blueprints'
 import type { Job } from '@shared/jobs'
 import type { AgentEntry, AgentRun } from '@shared/runs'
 import { useT, type TranslationKey } from '@renderer/i18n'
@@ -36,8 +38,8 @@ const permissionKeys: Record<AgentPermissionMode, TranslationKey> = {
 }
 
 interface AgentDetailsProps {
-  /** The agent node from the job's snapshot. */
-  node: Extract<BlueprintNode, { type: 'agent' }>
+  /** The agent or switch node from the job's snapshot. */
+  node: Extract<BlueprintNode, { type: 'agent' | 'switch' }>
   job: Job
   /** Its part of the latest run; missing before the first run. */
   agentRun: AgentRun | undefined
@@ -61,10 +63,21 @@ export function AgentDetails({ node, job, agentRun, names, now }: AgentDetailsPr
       className="min-w-0 overflow-hidden rounded-xl border border-border bg-background"
     >
       <header className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-port-result/15 text-port-result">
-          <Bot aria-hidden className="size-4" />
-        </span>
+        {node.type === 'switch' ? (
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent/15 text-accent">
+            <Split aria-hidden className="size-4" />
+          </span>
+        ) : (
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-port-result/15 text-port-result">
+            <Bot aria-hidden className="size-4" />
+          </span>
+        )}
         <h2 className="min-w-0 flex-1 truncate font-semibold">{node.name}</h2>
+        {agentRun && agentRun.round > 1 && (
+          <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+            {t('run.round', { round: agentRun.round })}
+          </span>
+        )}
         {duration && <span className="text-xs text-muted tabular-nums">{duration}</span>}
         {agentRun && <StatusBadge style={agentStatusStyles[agentRun.status]} />}
       </header>
@@ -73,6 +86,15 @@ export function AgentDetails({ node, job, agentRun, names, now }: AgentDetailsPr
         {agentRun?.error && (
           <div className="p-4">
             <ErrorCard text={agentRun.error} />
+          </div>
+        )}
+        {node.type === 'switch' && agentRun?.chosenOutput && (
+          <div className="flex items-center gap-2 px-4 py-3 text-[0.8125rem]">
+            <span className="text-muted">{t('run.switch.chosen')}</span>
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 font-medium text-accent">
+              {node.config.outputs.find((output) => output.id === agentRun.chosenOutput)?.name ??
+                agentRun.chosenOutput}
+            </span>
           </div>
         )}
         {agentRun?.result && !agentRun.error && (
@@ -96,7 +118,11 @@ export function AgentDetails({ node, job, agentRun, names, now }: AgentDetailsPr
           </Section>
         )}
         <Section title={t('agent.configuration')} defaultOpen={!started}>
-          <Configuration node={node} job={job} agentRun={agentRun} names={names} />
+          {node.type === 'switch' ? (
+            <SwitchConfiguration node={node} agentRun={agentRun} />
+          ) : (
+            <Configuration node={node} job={job} agentRun={agentRun} names={names} />
+          )}
         </Section>
       </div>
     </section>
@@ -326,6 +352,29 @@ function ToolCard({
 // --- Configuration ----------------------------------------------------------------------
 
 /** How the agent is set up, from the snapshot; after it started, also what it actually got. */
+function SwitchConfiguration({
+  node,
+  agentRun,
+}: {
+  node: Extract<BlueprintNode, { type: 'switch' }>
+  agentRun: AgentRun | undefined
+}) {
+  const t = useT()
+  return (
+    <dl className="divide-y divide-border/70 border-t border-border/70">
+      {node.config.outputs.map((output) => (
+        <Row key={output.id} label={output.name}>
+          <span className={cn(agentRun?.chosenOutput === output.id && 'font-medium text-accent')}>
+            {output.condition.trim() || '—'}
+          </span>
+        </Row>
+      ))}
+      <Row label={t('agent.model')}>{modelLabel(t, node.config.model)}</Row>
+      <Row label={t('agent.devops')}>{devOpsLabel(t, node.config.devops)}</Row>
+    </dl>
+  )
+}
+
 function Configuration({
   node,
   job,
@@ -340,9 +389,9 @@ function Configuration({
   const t = useT()
   const content = job.blueprint.content
   const input = agentRun?.input
-  const folderNode = sourceOf(content, node.id, 'folder')
+  const folderNode = effectiveSource(content, node.id, 'folder')
   const folder = input?.folder ?? (folderNode?.type === 'folder' ? folderNode.config.path : null)
-  const workItemNode = sourceOf(content, node.id, 'workItem')
+  const workItemNode = effectiveSource(content, node.id, 'workItem')
   const workItem = input?.workItem ?? (workItemNode ? job.workItems[workItemNode.id] : undefined)
   const after = incoming(content, node.id, 'result').map(
     (connection) => names[connection.from.nodeId] ?? connection.from.nodeId,
@@ -381,6 +430,17 @@ function Configuration({
           none
         )}
       </Row>
+      {input?.worktree && (
+        <Row label={t('agent.worktree')}>
+          <span
+            className="inline-flex min-w-0 items-center gap-1.5"
+            title={t('agent.worktree.hint')}
+          >
+            <GitBranch aria-hidden className="size-3.5 shrink-0 text-port-folder" />
+            <span className="font-mono text-xs break-all select-text">{input.worktree}</span>
+          </span>
+        </Row>
+      )}
       <Row label={t('agent.model')}>{modelLabel(t, node.config.model)}</Row>
       <Row label={t('agent.effort')}>{effortLabel(t, node.config.effort)}</Row>
       <Row label={t('agent.devops')}>{devOpsLabel(t, node.config.devops)}</Row>

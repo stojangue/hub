@@ -7,11 +7,13 @@
 import {
   blockDefinitions,
   canAddBlock,
-  findPort,
   isBlockType,
   agentDevOpsAccess,
+  maxRepeatRounds,
   type BlockConfigs,
   type BlockType,
+  type PortDefinition,
+  type PortSide,
 } from './blocks'
 import { asRecord, isNonEmptyString, isTimestamp, type UnknownRecord } from './validation'
 
@@ -51,6 +53,43 @@ export interface BlueprintConnection {
   id: string
   from: PortRef
   to: PortRef
+  /**
+   * Set on a connection back to an earlier agent: the part of the blueprint from `to` to `from`
+   * runs again, with the result of `from`, up to `maxRounds` times in all. A switch on the way
+   * decides whether another round is needed. Repeat connections are not part of the regular
+   * flow: they never count as an agent's input, cycle or dependency.
+   */
+  repeat?: { maxRounds: number }
+}
+
+/** The connections of the regular flow, without repeat connections. */
+export function flowConnections(content: BlueprintContent): BlueprintConnection[] {
+  return content.connections.filter((connection) => !connection.repeat)
+}
+
+export function repeatConnections(content: BlueprintContent): BlueprintConnection[] {
+  return content.connections.filter((connection) => connection.repeat)
+}
+
+/** A node's ports. Most blocks have fixed ones; a switch has its configured outputs. */
+export function nodePorts(node: BlueprintNode, side: PortSide): readonly PortDefinition[] {
+  if (side === 'output' && node.type === 'switch') {
+    return node.config.outputs.map((output) => ({
+      id: output.id,
+      dataType: 'result' as const,
+      label: output.name,
+    }))
+  }
+  const definition = blockDefinitions[node.type]
+  return side === 'input' ? definition.inputs : definition.outputs
+}
+
+export function findNodePort(
+  node: BlueprintNode,
+  side: PortSide,
+  portId: string,
+): PortDefinition | null {
+  return nodePorts(node, side).find((port) => port.id === portId) ?? null
 }
 
 /**
@@ -165,7 +204,7 @@ export function sanitizeName(value: unknown): string | null {
 
 // --- Graph rules --------------------------------------------------------------------------
 
-/** True if `target` can be reached from `start` by following connections. */
+/** True if `target` can be reached from `start` by following connections (repeats excluded). */
 function reaches(connections: readonly BlueprintConnection[], start: string, target: string) {
   const seen = new Set<string>()
   const stack = [start]
@@ -175,7 +214,9 @@ function reaches(connections: readonly BlueprintConnection[], start: string, tar
     if (seen.has(current)) continue
     seen.add(current)
     for (const connection of connections) {
-      if (connection.from.nodeId === current) stack.push(connection.to.nodeId)
+      if (!connection.repeat && connection.from.nodeId === current) {
+        stack.push(connection.to.nodeId)
+      }
     }
   }
   return false
@@ -198,11 +239,11 @@ export function checkConnection(
   const target = content.nodes.find((node) => node.id === to.nodeId)
   if (!source || !target) return { ok: false, reason: 'invalid' }
   if (source.id === target.id) return { ok: false, reason: 'sameNode' }
-  const output = findPort(source.type, 'output', from.port)
-  const input = findPort(target.type, 'input', to.port)
+  const output = findNodePort(source, 'output', from.port)
+  const input = findNodePort(target, 'input', to.port)
   if (!output || !input) return { ok: false, reason: 'invalid' }
   if (output.dataType !== input.dataType) return { ok: false, reason: 'type' }
-  const existing = content.connections.filter(
+  const existing = flowConnections(content).filter(
     (connection) => connection.to.nodeId === to.nodeId && connection.to.port === to.port,
   )
   if (existing.some((connection) => sameRef(connection.from, from))) {
@@ -215,6 +256,67 @@ export function checkConnection(
   return { ok: true, replaces }
 }
 
+export type RepeatCheck =
+  { ok: true } | { ok: false; reason: 'notBack' | 'type' | 'duplicate' | 'overlap' | 'invalid' }
+
+/**
+ * Whether a result can be led back to an earlier agent as a repeat connection: the target
+ * must come before the source in the regular flow, and the part that repeats must not share
+ * agents with another repeat.
+ */
+export function checkRepeat(content: BlueprintContent, from: PortRef, to: PortRef): RepeatCheck {
+  const source = content.nodes.find((node) => node.id === from.nodeId)
+  const target = content.nodes.find((node) => node.id === to.nodeId)
+  if (!source || !target || source.id === target.id) return { ok: false, reason: 'invalid' }
+  if (!blockDefinitions[source.type].runs || target.type !== 'agent') {
+    return { ok: false, reason: 'invalid' }
+  }
+  const output = findNodePort(source, 'output', from.port)
+  const input = findNodePort(target, 'input', to.port)
+  if (!output || !input) return { ok: false, reason: 'invalid' }
+  if (output.dataType !== 'result' || input.dataType !== 'result') {
+    return { ok: false, reason: 'type' }
+  }
+  const flow = flowConnections(content)
+  if (!reaches(flow, target.id, source.id)) return { ok: false, reason: 'notBack' }
+  const repeats = repeatConnections(content)
+  if (repeats.some((other) => other.from.nodeId === source.id && other.to.nodeId === target.id)) {
+    return { ok: false, reason: 'duplicate' }
+  }
+  const body = new Set(repeatBody(flow, from.nodeId, to.nodeId))
+  if (
+    repeats.some((other) =>
+      repeatBody(flow, other.from.nodeId, other.to.nodeId).some((id) => body.has(id)),
+    )
+  ) {
+    return { ok: false, reason: 'overlap' }
+  }
+  return { ok: true }
+}
+
+/** The nodes that repeat: on a regular path from the repeat's target to its source. */
+function repeatBody(
+  flow: readonly BlueprintConnection[],
+  sourceId: string,
+  targetId: string,
+): string[] {
+  const forward = new Set<string>()
+  const stack = [targetId]
+  while (stack.length > 0) {
+    const id = stack.pop() as string
+    if (forward.has(id)) continue
+    forward.add(id)
+    for (const connection of flow)
+      if (connection.from.nodeId === id) stack.push(connection.to.nodeId)
+  }
+  return [...forward].filter((id) => reaches(flow, id, sourceId))
+}
+
+/** The node IDs that a repeat connection runs again, in no particular order. */
+export function repeatedNodes(content: BlueprintContent, repeat: BlueprintConnection): string[] {
+  return repeatBody(flowConnections(content), repeat.from.nodeId, repeat.to.nodeId)
+}
+
 export function sameRef(a: PortRef, b: PortRef): boolean {
   return a.nodeId === b.nodeId && a.port === b.port
 }
@@ -225,7 +327,7 @@ export function incoming(
   nodeId: string,
   port?: string,
 ): BlueprintConnection[] {
-  return content.connections.filter(
+  return flowConnections(content).filter(
     (connection) =>
       connection.to.nodeId === nodeId && (port === undefined || connection.to.port === port),
   )
@@ -239,6 +341,31 @@ export function sourceOf(
 ): BlueprintNode | undefined {
   const connection = incoming(content, nodeId, port)[0]
   return connection ? content.nodes.find((node) => node.id === connection.from.nodeId) : undefined
+}
+
+/**
+ * The folder or work item an agent uses: the one linked to its input, or else the one of the
+ * agents whose results it gets, so a chain of agents needs them linked only once. The first
+ * linked agent that has one wins.
+ */
+export function effectiveSource(
+  content: BlueprintContent,
+  nodeId: string,
+  port: 'folder' | 'workItem',
+): BlueprintNode | undefined {
+  const seen = new Set<string>()
+  const find = (id: string): BlueprintNode | undefined => {
+    if (seen.has(id)) return undefined
+    seen.add(id)
+    const direct = sourceOf(content, id, port)
+    if (direct) return direct
+    for (const connection of incoming(content, id, 'result')) {
+      const found = find(connection.from.nodeId)
+      if (found) return found
+    }
+    return undefined
+  }
+  return find(nodeId)
 }
 
 /** The default name for a new node: its type label, numbered from the second one on. */
@@ -277,6 +404,12 @@ function sanitizeNode(value: unknown): BlueprintNode | null {
     position: sanitizePosition(input['position']),
     config: blockDefinitions[type].sanitizeConfig(input['config']),
   } as BlueprintNode
+}
+
+function sanitizeRepeat(value: unknown): { maxRounds: number } | undefined {
+  const rounds = asRecord(value)?.['maxRounds']
+  if (typeof rounds !== 'number' || !Number.isFinite(rounds)) return undefined
+  return { maxRounds: Math.min(maxRepeatRounds, Math.max(2, Math.round(rounds))) }
 }
 
 function sanitizeRef(value: unknown): PortRef | null {
@@ -328,27 +461,39 @@ export function sanitizeContent(value: unknown): BlueprintContent {
     content.nodes.push(node)
   }
 
+  // Regular connections first, since repeat connections are checked against them.
   const connectionIds = new Set<string>()
-  for (const raw of [...listOf(input?.['connections']), ...listOf(previous?.['connections'])]) {
+  const raws = [...listOf(input?.['connections']), ...listOf(previous?.['connections'])]
+  const isRepeat = (raw: unknown) => asRecord(raw)?.['repeat'] !== undefined
+  for (const raw of [...raws.filter((raw) => !isRepeat(raw)), ...raws.filter(isRepeat)]) {
     const record = asRecord(raw)
     const from = sanitizeRef(record?.['from'])
     const to = sanitizeRef(record?.['to'])
     const id = record?.['id']
-    const check = from && to ? checkConnection(content, from, to) : null
+    const repeat = isRepeat(raw) ? sanitizeRepeat(record?.['repeat']) : undefined
+    const ok =
+      from && to
+        ? repeat
+          ? checkRepeat(content, from, to).ok
+          : !isRepeat(raw) &&
+            (() => {
+              const check = checkConnection(content, from, to)
+              return check.ok && check.replaces.length === 0
+            })()
+        : false
     if (
       !from ||
       !to ||
       !isNonEmptyString(id) ||
       connectionIds.has(id) ||
       content.connections.length >= maxConnections ||
-      !check?.ok ||
-      check.replaces.length > 0
+      !ok
     ) {
       keepUnsupported(unsupported.connections, raw, maxConnections)
       continue
     }
     connectionIds.add(id)
-    content.connections.push({ id, from, to })
+    content.connections.push(repeat ? { id, from, to, repeat } : { id, from, to })
   }
   return content
 }

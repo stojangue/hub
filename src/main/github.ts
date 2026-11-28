@@ -483,3 +483,206 @@ export async function getIssueContent(repository: string, number: number): Promi
     })),
   }
 }
+
+/** A review comment thread on lines of a pull request's diff. */
+export interface ReviewThread {
+  /** GraphQL node ID, e.g. to resolve the thread. */
+  id: string
+  isResolved: boolean
+  /** The lines it refers to have changed since. */
+  isOutdated: boolean
+  path: string
+  /** Line in the current diff, or `null` if outdated; `originalLine` is in the diff it was made on. */
+  line: number | null
+  startLine: number | null
+  originalLine: number | null
+  side: 'LEFT' | 'RIGHT' | null
+  comments: {
+    /** REST ID, e.g. to reply to the thread. */
+    databaseId: number | null
+    author: string
+    createdAt: string
+    body: string
+  }[]
+}
+
+/** What an agent reads of a pull request: its branches, description, discussion and reviews. */
+export interface PullRequestContent {
+  state: string
+  isDraft: boolean
+  body: string
+  labels: string[]
+  headBranch: string
+  baseBranch: string
+  /** `owner/name` of the repository the head branch is in; `null` if it was deleted. */
+  headRepository: string | null
+  isCrossRepository: boolean
+  maintainerCanModify: boolean
+  comments: { author: string; createdAt: string; body: string }[]
+  totalComments: number
+  /** Submitted reviews with their overall comment, e.g. "changes requested". */
+  reviews: { author: string; state: string; submittedAt: string; body: string }[]
+  threads: ReviewThread[]
+  totalThreads: number
+}
+
+const pullRequestContentQuery = `
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      state
+      isDraft
+      body
+      headRefName
+      baseRefName
+      isCrossRepository
+      maintainerCanModify
+      headRepository { nameWithOwner }
+      labels(first: 50) { nodes { name } }
+      comments(last: 100) {
+        totalCount
+        nodes { author { login } createdAt body }
+      }
+      reviews(last: 100) {
+        nodes { author { login } state submittedAt body }
+      }
+      reviewThreads(first: 100) {
+        totalCount
+        nodes {
+          id
+          isResolved
+          isOutdated
+          path
+          line
+          startLine
+          originalLine
+          diffSide
+          comments(first: 50) {
+            nodes { databaseId author { login } createdAt body }
+          }
+        }
+      }
+    }
+  }
+}`
+
+interface RawComment {
+  databaseId?: number | null
+  author?: { login?: string } | null
+  createdAt?: string
+  body?: string
+}
+
+interface RawPullRequestContent {
+  data?: {
+    repository?: {
+      pullRequest?: {
+        state?: string
+        isDraft?: boolean
+        body?: string
+        headRefName?: string
+        baseRefName?: string
+        isCrossRepository?: boolean
+        maintainerCanModify?: boolean
+        headRepository?: { nameWithOwner?: string } | null
+        labels?: { nodes?: ({ name?: string } | null)[] }
+        comments?: { totalCount?: number; nodes?: (RawComment | null)[] }
+        reviews?: {
+          nodes?: ({
+            author?: { login?: string } | null
+            state?: string
+            submittedAt?: string | null
+            body?: string
+          } | null)[]
+        }
+        reviewThreads?: {
+          totalCount?: number
+          nodes?: ({
+            id?: string
+            isResolved?: boolean
+            isOutdated?: boolean
+            path?: string
+            line?: number | null
+            startLine?: number | null
+            originalLine?: number | null
+            diffSide?: string | null
+            comments?: { nodes?: (RawComment | null)[] }
+          } | null)[]
+        }
+      } | null
+    } | null
+  }
+}
+
+function toComment(raw: RawComment): { author: string; createdAt: string; body: string } {
+  return {
+    author: raw.author?.login ?? 'unknown',
+    createdAt: raw.createdAt ?? '',
+    body: raw.body ?? '',
+  }
+}
+
+const present = <T>(value: T | null | undefined): value is T => value != null
+
+/**
+ * Loads a pull request's full content for the agents of a job, including its review threads.
+ * Throws if `gh` fails or the pull request does not exist.
+ */
+export async function getPullRequestContent(
+  repository: string,
+  number: number,
+): Promise<PullRequestContent> {
+  const [owner = '', name = ''] = repository.split('/')
+  if (!namePattern.test(owner) || !namePattern.test(name) || !Number.isInteger(number)) {
+    throw new GhCommandError({ code: 'invalidRequest', message: 'Invalid pull request' })
+  }
+  const raw = await runGhJson<RawPullRequestContent>([
+    'api',
+    'graphql',
+    '-f',
+    `query=${pullRequestContentQuery}`,
+    '-f',
+    `owner=${owner}`,
+    '-f',
+    `name=${name}`,
+    '-F',
+    `number=${number}`,
+  ])
+  const pr = raw.data?.repository?.pullRequest
+  if (!pr) throw new GhCommandError({ code: 'notFound', message: 'Pull request not found' })
+  const threads = (pr.reviewThreads?.nodes ?? []).filter(present)
+  return {
+    state: pr.state ?? '',
+    isDraft: pr.isDraft === true,
+    body: pr.body ?? '',
+    labels: (pr.labels?.nodes ?? []).map((label) => label?.name ?? '').filter(Boolean),
+    headBranch: pr.headRefName ?? '',
+    baseBranch: pr.baseRefName ?? '',
+    headRepository: pr.headRepository?.nameWithOwner ?? null,
+    isCrossRepository: pr.isCrossRepository === true,
+    maintainerCanModify: pr.maintainerCanModify === true,
+    comments: (pr.comments?.nodes ?? []).filter(present).map(toComment),
+    totalComments: pr.comments?.totalCount ?? 0,
+    reviews: (pr.reviews?.nodes ?? []).filter(present).map((review) => ({
+      author: review.author?.login ?? 'unknown',
+      state: review.state ?? '',
+      submittedAt: review.submittedAt ?? '',
+      body: review.body ?? '',
+    })),
+    threads: threads.map((thread) => ({
+      id: thread.id ?? '',
+      isResolved: thread.isResolved === true,
+      isOutdated: thread.isOutdated === true,
+      path: thread.path ?? '',
+      line: thread.line ?? null,
+      startLine: thread.startLine ?? null,
+      originalLine: thread.originalLine ?? null,
+      side: thread.diffSide === 'LEFT' || thread.diffSide === 'RIGHT' ? thread.diffSide : null,
+      comments: (thread.comments?.nodes ?? []).filter(present).map((comment) => ({
+        databaseId: comment.databaseId ?? null,
+        ...toComment(comment),
+      })),
+    })),
+    totalThreads: pr.reviewThreads?.totalCount ?? threads.length,
+  }
+}

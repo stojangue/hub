@@ -35,6 +35,7 @@ export const en = {
   'settings.github.error': 'Check failed',
 
   'common.cancel': 'Cancel',
+  'common.save': 'Save',
   'common.create': 'Create',
   'common.delete': 'Delete',
   'common.name': 'Name',
@@ -196,7 +197,8 @@ export const en = {
   'blocks.folder.label': 'Folder',
   'blocks.folder.description': 'A local folder, e.g. the repository an agent works in.',
   'blocks.workItem.label': 'Work item',
-  'blocks.workItem.description': 'What to work on, e.g. a GitHub issue. The job provides it.',
+  'blocks.workItem.description':
+    'What to work on, e.g. a GitHub issue or pull request. The job provides it.',
   'blocks.agent.label': 'Agent',
   'blocks.agent.description': 'Runs an AI agent with the Claude Code CLI.',
 
@@ -244,6 +246,8 @@ export const en = {
   'inspector.folder.choose': 'Choose folder…',
   'inspector.folder.change': 'Change folder…',
   'inspector.folder.missing': 'This folder no longer exists. Choose another one.',
+  'inspector.agent.inheritsFolder': 'Uses the folder “{name}” of the agent before it.',
+  'inspector.agent.inheritsWorkItem': 'Uses the work item “{name}” of the agent before it.',
   'inspector.agent.cliMissing':
     'The Claude Code CLI is not available. You can edit this agent, but jobs with it cannot start.',
   'inspector.agent.instructions': 'Instructions',
@@ -263,8 +267,8 @@ export const en = {
   'agent.effort.max': 'Max',
   'agent.devops': 'DevOps access',
   'agent.devops.none': 'No access',
-  'agent.devops.read': 'Read work items and pull requests',
-  'agent.devops.write': 'Read, comment and open pull requests',
+  'agent.devops.read': 'Read only',
+  'agent.devops.write': 'Read and write (comment, create, merge)',
   'inspector.agent.permission': 'Permissions',
   'inspector.agent.permission.acceptEdits': 'Edit files',
   'inspector.agent.permission.plan': 'Read only',
@@ -283,6 +287,11 @@ export const en = {
   'jobs.create.repositoryPlaceholder': 'Choose a repository',
   'jobs.create.issuePlaceholder': 'Choose an issue',
   'jobs.create.noIssues': 'This repository has no open issues.',
+  'jobs.create.kind': 'Kind of work item',
+  'jobs.create.kind.issue': 'Issue',
+  'jobs.create.kind.pullRequest': 'Pull request',
+  'jobs.create.pullRequestPlaceholder': 'Choose a pull request',
+  'jobs.create.noPullRequests': 'This repository has no open pull requests.',
   'jobs.detail.workItemMissing': 'Not provided',
 
   'agents.status.waiting': 'Waiting',
@@ -291,6 +300,7 @@ export const en = {
   'agents.status.failed': 'Failed',
   'agents.status.skipped': 'Skipped',
   'agents.status.stopped': 'Stopped',
+  'agents.status.notTaken': 'Not taken',
 
   'start.title': 'The job cannot start yet',
   'start.cliMissing': 'The Claude Code CLI is not installed.',
@@ -299,6 +309,10 @@ export const en = {
   'start.folderNotSet': 'Folder “{name}” has no folder chosen.',
   'start.folderMissing': 'The folder of “{name}” does not exist: {path}',
   'start.workItemMissing': 'No work item was provided for “{name}”.',
+  'start.folderNotGitRepository':
+    'Folder “{name}” is not a git repository, which agents need to work on an issue or pull request in a worktree: {path}',
+  'start.folderWrongRepository': 'Folder “{name}” is not a clone of {repository}.',
+  'start.worktreeFailed': 'The worktree could not be made from folder “{name}”: {message}',
   'start.agentWithoutTask': 'Agent “{name}” has no instructions, work item or earlier results.',
   'start.newerFormat': 'This job was saved by a newer version of Hub. Update Hub to run it.',
   'start.unsupportedParts':
@@ -343,6 +357,36 @@ export const en = {
   'library.expand': 'Expand library',
   'library.group.sources': 'Sources',
   'library.group.ai': 'AI',
+  'library.group.flow': 'Flow',
+  'blocks.switch.label': 'Switch',
+  'blocks.switch.description':
+    'Reads the result of the agent before it and picks the way to go on, by conditions you set.',
+  'switch.defaultYes': 'Yes',
+  'switch.defaultNo': 'No',
+  'canvas.repeat': '↻ up to {rounds} rounds',
+  'inspector.switch.help':
+    'A short Claude call reads the result that comes in and picks the output whose condition fits. The result is passed on unchanged; agents at the other outputs do not run.',
+  'inspector.switch.outputs': 'Outputs',
+  'inspector.switch.outputName': 'Name',
+  'inspector.switch.conditionPlaceholder':
+    'When this way is taken, e.g. “There are findings that must be fixed”',
+  'inspector.switch.addOutput': 'Add output',
+  'inspector.switch.editOutput': 'Edit output',
+  'inspector.switch.deleteOutput': 'Delete output',
+  'inspector.switch.noCondition': 'No condition yet',
+  'inspector.switch.moveUp': 'Move “{name}” up',
+  'inspector.switch.moveDown': 'Move “{name}” down',
+  'inspector.switch.conditionLabel': 'When to take this way',
+  'inspector.switch.conditionHint':
+    'The switch reads this to decide. Describe what the result must say, as you would to a person.',
+  'inspector.switch.dialogHelp': 'Each output is a way the job can go on after the switch.',
+  'inspector.switch.newOutput': 'Output {number}',
+  'inspector.repeat.label': 'Repeat',
+  'inspector.repeat.maxRounds': 'Most rounds',
+  'inspector.repeat.help':
+    'After “{from}”, “{to}” runs again with its result, and so do the agents in between ({nodes}), up to the most rounds. A switch on the way ends the repeat when it picks another way.',
+  'run.switch.chosen': 'Picked',
+  'start.switchWithoutInput': 'Switch “{name}” has no result to judge. Link an agent to it.',
   'library.limitReached': 'A blueprint can have only one {block}.',
   'canvas.deleteConnection': 'Delete connection',
   'jobs.detail.started': 'Started {time}',
@@ -352,8 +396,19 @@ export const en = {
   'run.parallel': '{count} strands in parallel',
   'run.chain': 'Chain · {count} agents',
   'run.after': 'after {names}',
+  'run.round': 'Round {round}',
+  'run.loop': 'Repeat {name} · up to {rounds} rounds',
   'agent.configuration': 'Configuration',
   'agent.after': 'Runs after',
+  'agent.worktree': 'Worktree',
+  'agent.worktree.hint': 'Its own checkout of the pull request’s branch, made for this run',
+  'run.worktree.uncommittedChanges':
+    'The worktree for #{number} was kept because it has uncommitted changes: {path}',
+  'run.worktree.unpushedCommits':
+    'The worktree for #{number} was kept because branch {branch} has commits that are not pushed: {path}',
+  'run.worktree.interrupted':
+    'Hub quit during the run, so the worktree for #{number} was kept: {path}',
+  'run.worktree.removeFailed': 'The worktree for #{number} could not be removed: {path}',
   'agent.showPrompt': 'Show the full prompt',
 } as const
 

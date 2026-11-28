@@ -1,6 +1,7 @@
-import { useCallback } from 'react'
-import type { Repository } from '@shared/github'
-import { gitHubIssueId, type WorkItem } from '@shared/work-items'
+import { useCallback, useState } from 'react'
+import type { ItemList, Repository } from '@shared/github'
+import { gitHubItemId, type WorkItem, type WorkItemKind } from '@shared/work-items'
+import { SegmentedControl } from '@renderer/components/SegmentedControl'
 import { Select } from '@renderer/components/Select'
 import { Skeleton } from '@renderer/components/Skeleton'
 import { errorTitleKeys, toGitHubError } from '@renderer/github/errors'
@@ -22,7 +23,18 @@ interface WorkItemPickerProps {
   label: string
 }
 
-/** Picks a GitHub issue: first the repository, then one of its open issues. */
+/** What both lists have in common, enough to make a work item. */
+interface PickableItem {
+  number: number
+  title: string
+  url: string
+  isDraft?: boolean
+}
+
+/**
+ * Picks a GitHub issue or pull request: first the kind and the repository, then one of its
+ * open issues or pull requests.
+ */
 export function WorkItemPicker({
   id,
   repositories,
@@ -33,15 +45,16 @@ export function WorkItemPicker({
   label,
 }: WorkItemPickerProps) {
   const t = useT()
+  const [kind, setKind] = useState<WorkItemKind>(value?.kind ?? 'issue')
   const [owner = '', name = ''] = repository.split('/')
-  const loadIssues = useCallback(
-    () =>
-      repository
-        ? unwrap(api.github.issues({ owner, name, state: 'open' }))
-        : Promise.resolve(null),
-    [repository, owner, name],
-  )
-  const issues = useAsync(loadIssues)
+  const loadItems = useCallback((): Promise<ItemList<PickableItem> | null> => {
+    if (!repository) return Promise.resolve(null)
+    const query = { owner, name, state: 'open' } as const
+    return kind === 'pullRequest'
+      ? unwrap(api.github.pullRequests(query))
+      : unwrap(api.github.issues(query))
+  }, [repository, owner, name, kind])
+  const items = useAsync(loadItems)
 
   if (repositories.loading) return <Skeleton className="h-8 w-full" />
   if (repositories.error) {
@@ -52,9 +65,23 @@ export function WorkItemPicker({
     )
   }
 
-  const issueList = issues.data?.items ?? []
+  const itemList = items.data?.items ?? []
   return (
     <div className="space-y-2" aria-label={label} role="group">
+      <div className="text-[0.8125rem]">
+        <SegmentedControl
+          value={kind}
+          onChange={(next) => {
+            setKind(next)
+            onChange(null)
+          }}
+          label={t('jobs.create.kind')}
+          options={[
+            { value: 'issue', label: t('jobs.create.kind.issue') },
+            { value: 'pullRequest', label: t('jobs.create.kind.pullRequest') },
+          ]}
+        />
+      </div>
       <Select
         id={id}
         value={repository}
@@ -68,36 +95,43 @@ export function WorkItemPicker({
           .map((repo) => ({ value: repo.fullName, label: repo.fullName }))}
       />
       {repository &&
-        (issues.loading ? (
+        (items.loading ? (
           <Skeleton className="h-8 w-full" />
-        ) : issues.error ? (
+        ) : items.error ? (
           <p role="alert" className="text-[0.8125rem] text-danger">
-            {t(errorTitleKeys[toGitHubError(issues.error).code])}
+            {t(errorTitleKeys[toGitHubError(items.error).code])}
           </p>
-        ) : issueList.length === 0 ? (
-          <p className="text-[0.8125rem] text-muted">{t('jobs.create.noIssues')}</p>
+        ) : itemList.length === 0 ? (
+          <p className="text-[0.8125rem] text-muted">
+            {t(kind === 'pullRequest' ? 'jobs.create.noPullRequests' : 'jobs.create.noIssues')}
+          </p>
         ) : (
           <Select
-            value={value ? String(value.number) : ''}
+            value={value?.kind === kind ? String(value.number) : ''}
             onChange={(number) => {
-              const issue = issueList.find((candidate) => String(candidate.number) === number)
+              const item = itemList.find((candidate) => String(candidate.number) === number)
               onChange(
-                issue
+                item
                   ? {
                       source: 'github',
-                      id: gitHubIssueId(repository, issue.number),
-                      title: issue.title,
-                      url: issue.url,
+                      kind,
+                      id: gitHubItemId(repository, item.number),
+                      title: item.title,
+                      url: item.url,
                       repository,
-                      number: issue.number,
+                      number: item.number,
                     }
                   : null,
               )
             }}
-            placeholder={t('jobs.create.issuePlaceholder')}
-            options={issueList.map((issue) => ({
-              value: String(issue.number),
-              label: `#${issue.number} ${issue.title}`,
+            placeholder={t(
+              kind === 'pullRequest'
+                ? 'jobs.create.pullRequestPlaceholder'
+                : 'jobs.create.issuePlaceholder',
+            )}
+            options={itemList.map((item) => ({
+              value: String(item.number),
+              label: `#${item.number} ${item.title}${item.isDraft ? ` (${t('devops.pr.draft')})` : ''}`,
             }))}
           />
         ))}

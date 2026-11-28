@@ -3,13 +3,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { blockDefinitions, canAddBlock, type BlockType } from '@shared/blocks'
 import {
   checkConnection,
+  checkRepeat,
+  effectiveSource,
+  findNodePort,
   hasUnsupportedParts,
   isNewerFormat,
   nextNodeName,
   removeNode,
   removeUnsupportedNode,
   retryUnsupported,
-  sourceOf,
   type Blueprint,
   type BlueprintContent,
   type BlueprintNode,
@@ -25,7 +27,7 @@ import { useSettings } from '@renderer/settings/context'
 import { blockPresentation } from '../blocks'
 import { Canvas, type Selection } from './Canvas'
 import { headerHeight, nodeWidth, viewCenter, type View } from './geometry'
-import { Inspector, UnsupportedInspector } from './Inspector'
+import { Inspector, RepeatInspector, UnsupportedInspector } from './Inspector'
 import { Library } from './Library'
 import type { NodeSummary } from './NodeCard'
 import { useFolderStatus } from './use-folder-status'
@@ -64,7 +66,22 @@ function summarize(
       return {
         text: node.config.instructions.trim().split('\n')[0] || t('node.agent.noInstructions'),
       }
+    case 'switch':
+      return { text: node.config.outputs.map((output) => output.name).join(' · ') }
   }
+}
+
+/** Names of the folder and work item an agent takes over from earlier agents, if any. */
+function inheritedSources(
+  content: BlueprintContent,
+  node: BlueprintNode,
+): { folder: string | null; workItem: string | null } {
+  if (node.type !== 'agent') return { folder: null, workItem: null }
+  const name = (port: 'folder' | 'workItem') => {
+    if (content.connections.some((c) => c.to.nodeId === node.id && c.to.port === port)) return null
+    return effectiveSource(content, node.id, port)?.name ?? null
+  }
+  return { folder: name('folder'), workItem: name('workItem') }
 }
 
 /** The blueprint editor: library on the left, canvas in the middle, inspector on the right. */
@@ -182,7 +199,16 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
                 effort: settings.agentEffort,
                 devops: settings.agentDevOps,
               }
-            : blockDefinitions[type].defaultConfig(),
+            : type === 'switch'
+              ? {
+                  ...blockDefinitions.switch.defaultConfig(),
+                  // Two ways to start with, named in the app's language.
+                  outputs: [
+                    { id: 'yes', name: t('switch.defaultYes'), condition: '' },
+                    { id: 'no', name: t('switch.defaultNo'), condition: '' },
+                  ],
+                }
+              : blockDefinitions[type].defaultConfig(),
       } as BlueprintNode
       return { ...current, nodes: [...current.nodes, node] }
     })
@@ -217,13 +243,29 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
     change((current) => ({
       ...current,
       nodes: current.nodes.map((node) => (node.id === updated.id ? updated : node)),
+      // A removed switch output takes its connections along.
+      connections: current.connections.filter(
+        (connection) =>
+          connection.from.nodeId !== updated.id ||
+          findNodePort(updated, 'output', connection.from.port) !== null,
+      ),
     }))
   }
 
   function connect(from: PortRef, to: PortRef) {
     change((current) => {
       const check = checkConnection(current, from, to)
-      if (!check.ok) return current
+      if (!check.ok) {
+        // A link back to an earlier agent repeats the part in between.
+        if (check.reason !== 'cycle' || !checkRepeat(current, from, to).ok) return current
+        return {
+          ...current,
+          connections: [
+            ...current.connections,
+            { id: crypto.randomUUID(), from, to, repeat: { maxRounds: 3 } },
+          ],
+        }
+      }
       return {
         ...current,
         connections: [
@@ -281,6 +323,12 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
   )
   const selectedNode =
     selection?.kind === 'node' ? content.nodes.find((node) => node.id === selection.id) : undefined
+  const selectedRepeat =
+    selection?.kind === 'connection'
+      ? content.connections.find(
+          (connection) => connection.id === selection.id && connection.repeat,
+        )
+      : undefined
   const selectedUnsupported =
     selection?.kind === 'unsupported' ? content.unsupported.nodes[selection.index] : undefined
 
@@ -350,7 +398,28 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
               : undefined
           }
           cliAvailable={cliAvailable}
-          folderConnected={sourceOf(content, selectedNode.id, 'folder') !== undefined}
+          folderConnected={effectiveSource(content, selectedNode.id, 'folder') !== undefined}
+          inherited={inheritedSources(content, selectedNode)}
+          readOnly={readOnly}
+        />
+      )}
+      {selectedRepeat?.repeat && (
+        <RepeatInspector
+          key={selectedRepeat.id}
+          connection={selectedRepeat}
+          content={content}
+          onChange={(maxRounds) =>
+            change((current) => ({
+              ...current,
+              connections: current.connections.map((connection) =>
+                connection.id === selectedRepeat.id
+                  ? { ...connection, repeat: { maxRounds } }
+                  : connection,
+              ),
+            }))
+          }
+          onDelete={() => deleteSelection({ kind: 'connection', id: selectedRepeat.id })}
+          onClose={() => setSelection(null)}
           readOnly={readOnly}
         />
       )}

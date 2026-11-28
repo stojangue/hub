@@ -1,15 +1,23 @@
-import { CircleHelp, FolderOpen, Info, Trash2, TriangleAlert, X } from 'lucide-react'
+import { CircleHelp, FolderOpen, Info, Repeat, Trash2, TriangleAlert, X } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
 import {
   agentPermissionModes,
   isBlockType,
   maxInstructionsLength,
+  maxRepeatRounds,
   type AgentDevOpsAccess,
   type AgentEffort,
   type AgentModel,
   type AgentPermissionMode,
 } from '@shared/blocks'
-import { describeUnsupportedNode, maxNameLength, type BlueprintNode } from '@shared/blueprints'
+import {
+  describeUnsupportedNode,
+  maxNameLength,
+  repeatedNodes,
+  type BlueprintConnection,
+  type BlueprintContent,
+  type BlueprintNode,
+} from '@shared/blueprints'
 import type { UnknownRecord } from '@shared/validation'
 import { devOpsOptions, effortOptions, modelOptions } from '@renderer/claude/agent-options'
 import { Button } from '@renderer/components/Button'
@@ -19,6 +27,7 @@ import { useT, type TranslationKey } from '@renderer/i18n'
 import { api } from '@renderer/lib/api'
 import { cn } from '@renderer/lib/cn'
 import { blockPresentation } from '../blocks'
+import { SwitchOutputs } from './SwitchOutputs'
 
 const permissionKeys: Record<AgentPermissionMode, TranslationKey> = {
   acceptEdits: 'inspector.agent.permission.acceptEdits',
@@ -35,8 +44,13 @@ interface InspectorProps {
   folderExists: boolean | undefined
   /** Whether the Claude Code CLI is installed, or `undefined` while unchecked. */
   cliAvailable: boolean | undefined
-  /** For agent nodes: whether a folder is linked, so permissions to work in it matter. */
+  /**
+   * For agent nodes: whether a folder is linked, to it or to an earlier agent it takes over
+   * from, so permissions to work in it matter.
+   */
   folderConnected: boolean
+  /** For agent nodes: the folder and work item taken over from earlier agents, by name. */
+  inherited?: { folder: string | null; workItem: string | null }
   /** Shows the settings without letting them be changed. */
   readOnly?: boolean
 }
@@ -50,6 +64,7 @@ export function Inspector({
   folderExists,
   cliAvailable,
   folderConnected,
+  inherited,
   readOnly = false,
 }: InspectorProps) {
   const t = useT()
@@ -89,19 +104,30 @@ export function Inspector({
           <InspectorField label={t('inspector.folder.path')}>
             {() => (
               <div className="space-y-2">
-                <div className="flex items-stretch gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  {/*
+                   * One line at the height of the other inputs. Long paths are cut off at the
+                   * start, so the folder's own name stays visible; the full path shows on hover.
+                   */}
                   <div
                     title={node.config.path ?? undefined}
+                    dir={node.config.path ? 'rtl' : undefined}
                     className={cn(
-                      'min-w-0 flex-1 rounded-md border border-border bg-surface px-2.5 py-1.5 font-mono text-xs break-all select-text',
-                      !node.config.path && 'font-sans text-muted',
+                      'flex h-8 min-w-0 flex-1 items-center rounded-md border border-border bg-surface px-2.5 text-xs select-text',
+                      node.config.path ? 'font-mono' : 'text-muted',
                     )}
                   >
-                    {node.config.path ?? t('inspector.folder.none')}
+                    <span className="min-w-0 truncate">
+                      {node.config.path ? (
+                        <bdi dir="ltr">{node.config.path}</bdi>
+                      ) : (
+                        t('inspector.folder.none')
+                      )}
+                    </span>
                   </div>
                   <Button
                     iconOnly
-                    className="h-auto min-h-7 self-stretch"
+                    className="size-8"
                     aria-label={
                       node.config.path ? t('inspector.folder.change') : t('inspector.folder.choose')
                     }
@@ -129,6 +155,18 @@ export function Inspector({
           <>
             {cliAvailable === false && (
               <Note tone="warning">{t('inspector.agent.cliMissing')}</Note>
+            )}
+            {(inherited?.folder || inherited?.workItem) && (
+              <Note>
+                {[
+                  inherited.folder &&
+                    t('inspector.agent.inheritsFolder', { name: inherited.folder }),
+                  inherited.workItem &&
+                    t('inspector.agent.inheritsWorkItem', { name: inherited.workItem }),
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              </Note>
             )}
             <InspectorField label={t('inspector.agent.instructions')}>
               {(id) => (
@@ -218,6 +256,48 @@ export function Inspector({
                 )}
               </InspectorField>
             )}
+          </>
+        )}
+        {node.type === 'switch' && (
+          <>
+            <Note>{t('inspector.switch.help')}</Note>
+            <SwitchOutputs
+              outputs={node.config.outputs}
+              onChange={(outputs) => onChange({ ...node, config: { ...node.config, outputs } })}
+              readOnly={readOnly}
+            />
+            <InspectorField label={t('agent.model')}>
+              {(id) => (
+                <Select
+                  id={id}
+                  value={node.config.model}
+                  onChange={(model) =>
+                    onChange({ ...node, config: { ...node.config, model: model as AgentModel } })
+                  }
+                  placeholder={t('agent.model')}
+                  options={modelOptions(t)}
+                />
+              )}
+            </InspectorField>
+            <InspectorField label={t('agent.devops')}>
+              {(id) => (
+                <Select
+                  id={id}
+                  value={node.config.devops}
+                  onChange={(devops) =>
+                    onChange({
+                      ...node,
+                      config: { ...node.config, devops: devops === 'read' ? 'read' : 'none' },
+                    })
+                  }
+                  placeholder={t('agent.devops')}
+                  options={[
+                    { value: 'none', label: t('agent.devops.none') },
+                    { value: 'read', label: t('agent.devops.read') },
+                  ]}
+                />
+              )}
+            </InspectorField>
           </>
         )}
       </fieldset>
@@ -386,5 +466,79 @@ function Note({
       <NoteIcon aria-hidden className="mt-px size-3.5 shrink-0" />
       <span>{children}</span>
     </p>
+  )
+}
+
+interface RepeatInspectorProps {
+  connection: BlueprintConnection
+  content: BlueprintContent
+  onChange: (maxRounds: number) => void
+  onDelete: () => void
+  onClose: () => void
+  readOnly?: boolean
+}
+
+/** Edits a repeat connection: how many rounds the part it leads back over may run. */
+export function RepeatInspector({
+  connection,
+  content,
+  onChange,
+  onDelete,
+  onClose,
+  readOnly = false,
+}: RepeatInspectorProps) {
+  const t = useT()
+  const name = (id: string) => content.nodes.find((node) => node.id === id)?.name ?? id
+  const repeated = repeatedNodes(content, connection)
+    .map(name)
+    .sort((a, b) => a.localeCompare(b))
+  const rounds = connection.repeat?.maxRounds ?? 2
+  const [draft, setDraft] = useState(String(rounds))
+  return (
+    <aside
+      aria-label={t('inspector.label')}
+      className="flex w-80 shrink-0 flex-col border-l border-border bg-background"
+    >
+      <InspectorHeader
+        icon={<Repeat aria-hidden className="size-4" />}
+        tone="bg-accent/15 text-accent"
+        label={t('inspector.repeat.label')}
+        name={`${name(connection.from.nodeId)} → ${name(connection.to.nodeId)}`}
+        onDelete={readOnly ? undefined : onDelete}
+        onClose={onClose}
+      />
+      <fieldset
+        disabled={readOnly}
+        className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto px-4 py-4"
+      >
+        <InspectorField label={t('inspector.repeat.maxRounds')}>
+          {(id) => (
+            <input
+              id={id}
+              type="number"
+              min={2}
+              max={maxRepeatRounds}
+              value={draft}
+              onChange={(event) => {
+                setDraft(event.target.value)
+                const value = Math.round(Number(event.target.value))
+                if (Number.isFinite(value) && value >= 2 && value <= maxRepeatRounds) {
+                  onChange(value)
+                }
+              }}
+              onBlur={() => setDraft(String(connection.repeat?.maxRounds ?? rounds))}
+              className={inputClasses}
+            />
+          )}
+        </InspectorField>
+        <Note>
+          {t('inspector.repeat.help', {
+            nodes: repeated.join(', '),
+            from: name(connection.from.nodeId),
+            to: name(connection.to.nodeId),
+          })}
+        </Note>
+      </fieldset>
+    </aside>
   )
 }

@@ -1,4 +1,4 @@
-import { Bot, CircleDot, Folder, type LucideIcon } from 'lucide-react'
+import { Bot, CircleDot, Folder, Split, type LucideIcon } from 'lucide-react'
 import type { BlockType, DataType } from '@shared/blocks'
 import type { TranslationKey } from '@renderer/i18n'
 
@@ -33,6 +33,12 @@ export const blockPresentation: Record<BlockType, BlockPresentation> = {
     descriptionKey: 'blocks.agent.description',
     tone: 'bg-port-result/15 text-port-result',
   },
+  switch: {
+    icon: Split,
+    labelKey: 'blocks.switch.label',
+    descriptionKey: 'blocks.switch.description',
+    tone: 'bg-accent/15 text-accent',
+  },
 }
 
 export interface DataTypePresentation {
@@ -57,6 +63,7 @@ export interface LibraryGroup {
 export const libraryGroups: readonly LibraryGroup[] = [
   { id: 'sources', labelKey: 'library.group.sources', blocks: ['workItem', 'folder'] },
   { id: 'ai', labelKey: 'library.group.ai', blocks: ['agent'] },
+  { id: 'flow', labelKey: 'library.group.flow', blocks: ['switch'] },
 ]
 
 /** `dataTransfer` type used when a block is dragged from the library. */

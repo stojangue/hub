@@ -87,15 +87,42 @@ function JobDetail({ data }: { data: JobWithSource }) {
     return result
   }, [content.nodes, run?.agents])
 
+  const outputNames = useMemo(() => {
+    const result: Record<string, Record<string, string>> = {}
+    for (const node of content.nodes) {
+      if (node.type !== 'switch') continue
+      result[node.id] = Object.fromEntries(
+        node.config.outputs.map((output) => [output.id, output.name]),
+      )
+    }
+    return result
+  }, [content.nodes])
+
+  // Repeated parts of the plan, by their repeat connection.
+  const loops = useMemo(() => {
+    const result: Record<string, { name: string; maxRounds: number }> = {}
+    const name = (id: string) => content.nodes.find((node) => node.id === id)?.name ?? id
+    for (const connection of content.connections) {
+      if (!connection.repeat) continue
+      result[connection.id] = {
+        name: `${name(connection.from.nodeId)} → ${name(connection.to.nodeId)}`,
+        maxRounds: connection.repeat.maxRounds,
+      }
+    }
+    return result
+  }, [content])
+
   // Until one is picked, the agent that needs attention most is shown.
   const agentRuns = run ? Object.values(run.agents) : []
+  // Agents are picked by plan step, since an agent in a loop has a step per round.
   const shownId =
-    (picked && steps.some((step) => step.nodeId === picked) ? picked : null) ??
-    agentRuns.find((agent) => agent.status === 'running')?.nodeId ??
-    agentRuns.find((agent) => agent.status === 'failed')?.nodeId ??
-    steps[0]?.nodeId ??
+    (picked && steps.some((step) => step.id === picked) ? picked : null) ??
+    agentRuns.find((agent) => agent.status === 'running')?.stepId ??
+    agentRuns.find((agent) => agent.status === 'failed')?.stepId ??
+    steps[0]?.id ??
     null
-  const shownNode = content.nodes.find((node) => node.id === shownId)
+  const shownStep = steps.find((step) => step.id === shownId)
+  const shownNode = content.nodes.find((node) => node.id === shownStep?.nodeId)
   const workItemNode = content.nodes.find((node) => node.type === 'workItem')
   const workItem = workItemNode ? job.workItems[workItemNode.id] : undefined
 
@@ -241,6 +268,21 @@ function JobDetail({ data }: { data: JobWithSource }) {
       )}
       {!sourceExists && <Note>{t('jobs.detail.sourceDeleted')}</Note>}
       {!run && !runLoading && steps.length > 0 && <Note>{t('run.notRunYet')}</Note>}
+      {run?.worktrees.map(
+        (worktree) =>
+          worktree.status === 'kept' &&
+          worktree.keptReason && (
+            <Note key={worktree.path}>
+              <span className="min-w-0 break-all select-text">
+                {t(`run.worktree.${worktree.keptReason}`, {
+                  number: worktree.pullRequest,
+                  branch: worktree.branch,
+                  path: worktree.path,
+                })}
+              </span>
+            </Note>
+          ),
+      )}
 
       {steps.length === 0 ? (
         <Note>{t('run.noAgents')}</Note>
@@ -251,6 +293,8 @@ function JobDetail({ data }: { data: JobWithSource }) {
               <AgentList
                 plan={plan}
                 names={names}
+                loops={loops}
+                outputNames={outputNames}
                 agents={run?.agents ?? null}
                 selected={shownId}
                 onSelect={setPicked}
@@ -258,12 +302,12 @@ function JobDetail({ data }: { data: JobWithSource }) {
               />
             </div>
           </div>
-          {shownNode?.type === 'agent' && (
+          {(shownNode?.type === 'agent' || shownNode?.type === 'switch') && (
             <AgentDetails
-              key={shownNode.id}
+              key={shownId}
               node={shownNode}
               job={job}
-              agentRun={run?.agents[shownNode.id]}
+              agentRun={shownId ? run?.agents[shownId] : undefined}
               names={names}
               now={now}
             />
