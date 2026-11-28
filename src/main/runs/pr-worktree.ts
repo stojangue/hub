@@ -374,6 +374,7 @@ export async function createIssueWorktree(
       return issueWorktree(info, folder, existing, dirname(existing), branch, {
         createdBranch: madeByApp,
         reused: true,
+        mayHoldUnpushed: true,
         number,
         remote,
         base,
@@ -430,6 +431,9 @@ export async function createIssueWorktree(
     // A branch the app made is deleted with the worktree, and only once nothing is lost.
     createdBranch: !local || madeByApp,
     reused: false,
+    // A branch the app left with commits of its own may hold unpushed work from an earlier
+    // run, so removing the worktree must check the head branch, as for a reused worktree.
+    mayHoldUnpushed: local && madeByApp,
     number,
     remote,
     base,
@@ -446,6 +450,8 @@ async function issueWorktree(
   options: {
     createdBranch: boolean
     reused: boolean
+    /** Set when the worktree may start with commits that are not pushed. */
+    mayHoldUnpushed: boolean
     number: number
     remote: string
     base: string
@@ -471,15 +477,18 @@ async function describeIssueWorktree(
   options: {
     createdBranch: boolean
     reused: boolean
+    /** Set when the worktree may start with commits that are not pushed. */
+    mayHoldUnpushed: boolean
     number: number
     remote: string
     base: string
   },
 ): Promise<PullRequestWorktree> {
   const { remote, base } = options
-  // A kept worktree may hold commits that are not pushed, so removing it later always checks
-  // the head branch instead of comparing with where it starts now.
-  const startCommit = options.reused ? '' : (await git(root, ['rev-parse', 'HEAD'])).trim()
+  // A kept worktree, or a branch an earlier run left with commits of its own, may hold commits
+  // that are not pushed, so removing it later always checks the head branch instead of
+  // comparing with where it starts now.
+  const startCommit = options.mayHoldUnpushed ? '' : (await git(root, ['rev-parse', 'HEAD'])).trim()
   const tracks = (
     await git(root, ['rev-parse', '--abbrev-ref', '@{upstream}']).catch(() => '')
   ).trim()
