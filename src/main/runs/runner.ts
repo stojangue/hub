@@ -291,22 +291,38 @@ function describePullRequest(item: WorkItem, content: PullRequestContent | null)
     )
   }
 
+  parts.push(describeThreadList(content))
+  return parts.join('\n\n')
+}
+
+/** The pull request's review threads in full, unresolved ones first. */
+function describeThreadList(content: PullRequestContent): string {
   // Unresolved threads first: they are what is left to address.
   const threads = [...content.threads].sort((a, b) => Number(a.isResolved) - Number(b.isResolved))
   const unresolved = threads.filter((thread) => !thread.isResolved).length
-  if (threads.length > 0) {
-    const counts = `${unresolved} unresolved, ${threads.length - unresolved} resolved${content.totalThreads > threads.length ? `; ${content.totalThreads - threads.length} more not shown` : ''}`
-    parts.push(
-      [
-        `### Review comments on lines (${counts})`,
-        'Each thread shows its file and line in the pull request, whether it is resolved, and its comments in order.',
-        ...threads.map(describeThread),
-      ].join('\n\n'),
-    )
-  } else {
-    parts.push('### Review comments on lines\n\nThere are none.')
-  }
-  return parts.join('\n\n')
+  if (threads.length === 0) return '### Review comments on lines\n\nThere are none.'
+  const counts = `${unresolved} unresolved, ${threads.length - unresolved} resolved${content.totalThreads > threads.length ? `; ${content.totalThreads - threads.length} more not shown` : ''}`
+  return [
+    `### Review comments on lines (${counts})`,
+    'Each thread shows its file and line in the pull request, whether it is resolved, and its comments in order.',
+    ...threads.map(describeThread),
+  ].join('\n\n')
+}
+
+/** The pull request for an issue's branch, with its review threads as they are now. */
+function describeBranchPullRequest(
+  item: WorkItem,
+  number: number,
+  content: PullRequestContent | null,
+): string {
+  const heading = `## Pull request #${number} for this branch`
+  const url = `https://github.com/${item.repository}/pull/${number}`
+  if (!content) return `${heading}\n\n${url}\n\nIts review threads could not be loaded.`
+  return [
+    heading,
+    `${url}\nState: ${content.state.toLowerCase()}${content.isDraft ? ' (draft)' : ''}. Loaded just before you started.`,
+    describeThreadList(content),
+  ].join('\n\n')
 }
 
 function describeWorkItem(item: WorkItem, content: WorkItemContent | null): string {
@@ -1139,7 +1155,7 @@ async function startAgentNode(
       const number = await findPullRequestForBranch(workItem.repository, worktree.headBranch)
       if (number !== null) {
         const pr = await getPullRequestContent(workItem.repository, number).catch(() => null)
-        current.push(describeThreadsNow(number, pr))
+        current.push(describeBranchPullRequest(workItem, number, pr))
       }
     }
   } catch (error) {
