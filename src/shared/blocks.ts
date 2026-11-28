@@ -138,12 +138,7 @@ export const blockDefinitions: { [T in BlockType]: BlockDefinition<T> } = {
         permissionMode: isOneOf(agentPermissionModes, input['permissionMode'])
           ? input['permissionMode']
           : 'acceptEdits',
-        // `github` is what this setting was called before it covered other platforms.
-        devops: isOneOf(agentDevOpsAccess, input['devops'])
-          ? input['devops']
-          : isOneOf(agentDevOpsAccess, input['github'])
-            ? input['github']
-            : 'read',
+        devops: isOneOf(agentDevOpsAccess, input['devops']) ? input['devops'] : 'read',
       }
     },
   },

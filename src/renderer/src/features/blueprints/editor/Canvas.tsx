@@ -23,6 +23,7 @@ import {
 } from '@shared/blocks'
 import {
   checkConnection,
+  describeUnsupportedNode,
   type BlueprintContent,
   type BlueprintNode,
   type PortRef,
@@ -32,8 +33,14 @@ import { Button } from '@renderer/components/Button'
 import { useT } from '@renderer/i18n'
 import { cn } from '@renderer/lib/cn'
 import { blockDragType, dataTypePresentation } from '../blocks'
-import { connectionMidpoint, connectionPath, portPosition, type View } from './geometry'
-import { NodeCard, type NodeSummary, type PortHighlight } from './NodeCard'
+import {
+  connectionMidpoint,
+  connectionPath,
+  portPosition,
+  unsupportedPosition,
+  type View,
+} from './geometry'
+import { NodeCard, UnsupportedNodeCard, type NodeSummary, type PortHighlight } from './NodeCard'
 
 const minZoom = 0.25
 const maxZoom = 4
@@ -57,7 +64,15 @@ const clickTolerance = 4
  */
 export type { View } from './geometry'
 
-export type Selection = { kind: 'node'; id: string } | { kind: 'connection'; id: string } | null
+export type Selection =
+  | { kind: 'node'; id: string }
+  | { kind: 'connection'; id: string }
+  /** An unsupported node, by its index in `content.unsupported.nodes`. */
+  | { kind: 'unsupported'; index: number }
+  | null
+
+/** What can be moved by dragging it. */
+type Movable = { kind: 'node'; id: string } | { kind: 'unsupported'; index: number }
 
 function clampZoom(zoom: number): number {
   return Math.min(maxZoom, Math.max(minZoom, zoom))
@@ -99,7 +114,7 @@ type PointerAction =
   | {
       kind: 'move'
       pointerId: number
-      nodeId: string
+      target: Movable
       startX: number
       startY: number
       origin: Position
@@ -113,11 +128,16 @@ interface CanvasProps {
   onSelect: (selection: Selection) => void
   summaries: Record<string, NodeSummary>
   onMoveNode: (id: string, position: Position) => void
+  onMoveUnsupported: (index: number, position: Position) => void
   onConnect: (from: PortRef, to: PortRef) => void
   onDropBlock: (type: BlockType, center: Position) => void
   onDeleteConnection: (id: string) => void
   /** Overlays in the bottom-left corner, e.g. the save status. */
   status?: ReactNode
+  /** Shown at the top, e.g. why parts of the blueprint need attention. */
+  notice?: ReactNode
+  /** Nodes can be selected and the view moved, but nothing can be changed. */
+  readOnly?: boolean
 }
 
 /** A pannable, zoomable canvas with a dot grid, nodes and the connections between them. */
@@ -129,10 +149,13 @@ export function Canvas({
   onSelect,
   summaries,
   onMoveNode,
+  onMoveUnsupported,
   onConnect,
   onDropBlock,
   onDeleteConnection,
   status,
+  notice,
+  readOnly = false,
 }: CanvasProps) {
   const t = useT()
   const viewport = useRef<HTMLDivElement>(null)
@@ -278,19 +301,24 @@ export function Canvas({
 
   // --- Moving nodes -----------------------------------------------------------------------
 
-  function handleNodePointerDown(event: PointerEvent<HTMLDivElement>, node: BlueprintNode) {
+  function handleNodePointerDown(
+    event: PointerEvent<HTMLDivElement>,
+    target: Movable,
+    origin: Position,
+  ) {
     if (event.button !== 0) return
     event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
     viewport.current?.focus()
-    onSelect({ kind: 'node', id: node.id })
+    onSelect(target)
+    if (readOnly) return
+    event.currentTarget.setPointerCapture(event.pointerId)
     action.current = {
       kind: 'move',
       pointerId: event.pointerId,
-      nodeId: node.id,
+      target,
       startX: event.clientX,
       startY: event.clientY,
-      origin: node.position,
+      origin,
     }
   }
 
@@ -298,10 +326,12 @@ export function Canvas({
     const current = action.current
     if (current?.kind !== 'move' || current.pointerId !== event.pointerId) return
     const zoom = viewRef.current.zoom
-    onMoveNode(current.nodeId, {
+    const position = {
       x: Math.round(current.origin.x + (event.clientX - current.startX) / zoom),
       y: Math.round(current.origin.y + (event.clientY - current.startY) / zoom),
-    })
+    }
+    if (current.target.kind === 'node') onMoveNode(current.target.id, position)
+    else onMoveUnsupported(current.target.index, position)
   }
 
   function handleNodePointerUp(event: PointerEvent<HTMLDivElement>) {
@@ -318,6 +348,11 @@ export function Canvas({
   ) {
     if (event.button !== 0) return
     event.stopPropagation()
+    if (readOnly) {
+      viewport.current?.focus()
+      onSelect({ kind: 'node', id: node.id })
+      return
+    }
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     viewport.current?.focus()
@@ -401,7 +436,7 @@ export function Canvas({
   // --- Dropping blocks from the library ---------------------------------------------------
 
   function handleDragOver(event: DragEvent<HTMLDivElement>) {
-    if (!event.dataTransfer.types.includes(blockDragType)) return
+    if (readOnly || !event.dataTransfer.types.includes(blockDragType)) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
     setDropActive(true)
@@ -410,7 +445,7 @@ export function Canvas({
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     setDropActive(false)
     const type = event.dataTransfer.getData(blockDragType)
-    if (!isBlockType(type)) return
+    if (readOnly || !isBlockType(type)) return
     event.preventDefault()
     onDropBlock(type, toCanvas(event.clientX, event.clientY))
   }
@@ -535,9 +570,12 @@ export function Canvas({
                     fill="none"
                     stroke="transparent"
                     strokeWidth={16}
-                    className={cn('cursor-pointer', !connect && '[pointer-events:stroke]')}
+                    className={cn(
+                      'cursor-pointer',
+                      !connect && !readOnly && '[pointer-events:stroke]',
+                    )}
                   />
-                  {!connect && (
+                  {!connect && !readOnly && (
                     <g
                       role="button"
                       aria-label={label}
@@ -571,6 +609,23 @@ export function Canvas({
             )}
           </svg>
 
+          {content.unsupported.nodes.map((raw, index) => {
+            const position = unsupportedPosition(raw, index)
+            return (
+              <UnsupportedNodeCard
+                key={`unsupported:${index}`}
+                info={describeUnsupportedNode(raw)}
+                position={position}
+                selected={selection?.kind === 'unsupported' && selection.index === index}
+                onPointerDown={(event) =>
+                  handleNodePointerDown(event, { kind: 'unsupported', index }, position)
+                }
+                onPointerMove={handleNodePointerMove}
+                onPointerUp={handleNodePointerUp}
+              />
+            )
+          })}
+
           {content.nodes.map((node) => (
             <NodeCard
               key={node.id}
@@ -579,7 +634,9 @@ export function Canvas({
               selected={selection?.kind === 'node' && selection.id === node.id}
               connectedPorts={connectedPorts.get(node.id) ?? emptySet}
               highlight={highlightFor(node)}
-              onPointerDown={(event) => handleNodePointerDown(event, node)}
+              onPointerDown={(event) =>
+                handleNodePointerDown(event, { kind: 'node', id: node.id }, node.position)
+              }
               onPointerMove={handleNodePointerMove}
               onPointerUp={handleNodePointerUp}
               onPortPointerDown={(event, side, port) =>
@@ -591,6 +648,12 @@ export function Canvas({
           ))}
         </div>
       </div>
+
+      {notice && (
+        <div className="pointer-events-none absolute inset-x-4 top-4 flex flex-col items-center gap-2 *:pointer-events-auto">
+          {notice}
+        </div>
+      )}
 
       {status && <div className="absolute bottom-4 left-4">{status}</div>}
 

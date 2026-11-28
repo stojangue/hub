@@ -6,6 +6,7 @@ import { Select } from '@renderer/components/Select'
 import { languageNames, useT, type TranslationKey } from '@renderer/i18n'
 import { useSettings } from '@renderer/settings/context'
 import { ClaudeCodeIntegrationRow } from './components/ClaudeCodeIntegrationRow'
+import { DataFolderRow } from './components/DataFolderRow'
 import { GitHubIntegrationRow } from './components/GitHubIntegrationRow'
 import { SettingRow, SettingsSection } from './components/SettingsSection'
 
@@ -100,6 +101,10 @@ export function SettingsPage() {
             />
           </div>
         </SettingRow>
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.data.title')}>
+        <DataFolderRow />
       </SettingsSection>
     </div>
   )

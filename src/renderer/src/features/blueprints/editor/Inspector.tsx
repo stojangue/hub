@@ -1,14 +1,16 @@
-import { FolderOpen, Info, Trash2, TriangleAlert, X } from 'lucide-react'
+import { CircleHelp, FolderOpen, Info, Trash2, TriangleAlert, X } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
 import {
   agentPermissionModes,
+  isBlockType,
   maxInstructionsLength,
   type AgentDevOpsAccess,
   type AgentEffort,
   type AgentModel,
   type AgentPermissionMode,
 } from '@shared/blocks'
-import { maxNameLength, type BlueprintNode } from '@shared/blueprints'
+import { describeUnsupportedNode, maxNameLength, type BlueprintNode } from '@shared/blueprints'
+import type { UnknownRecord } from '@shared/validation'
 import { devOpsOptions, effortOptions, modelOptions } from '@renderer/claude/agent-options'
 import { Button } from '@renderer/components/Button'
 import { inputClasses } from '@renderer/components/Dialog'
@@ -35,6 +37,8 @@ interface InspectorProps {
   cliAvailable: boolean | undefined
   /** For agent nodes: whether a folder is linked, so permissions to work in it matter. */
   folderConnected: boolean
+  /** Shows the settings without letting them be changed. */
+  readOnly?: boolean
 }
 
 /** Edits the selected node. Every change is applied, and saved, straight away. */
@@ -46,6 +50,7 @@ export function Inspector({
   folderExists,
   cliAvailable,
   folderConnected,
+  readOnly = false,
 }: InspectorProps) {
   const t = useT()
   const presentation = blockPresentation[node.type]
@@ -56,41 +61,24 @@ export function Inspector({
       aria-label={t('inspector.label')}
       className="flex w-80 shrink-0 flex-col border-l border-border bg-background"
     >
-      <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-        <span
-          className={cn(
-            'flex size-7 shrink-0 items-center justify-center rounded-md',
-            presentation.tone,
-          )}
-        >
-          <Icon aria-hidden className="size-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-xs text-muted">{t(presentation.labelKey)}</div>
-          <div className="truncate font-medium">{node.name}</div>
-        </div>
-        <Button
-          variant="ghost"
-          iconOnly
-          onClick={onDelete}
-          aria-label={t('inspector.delete')}
-          title={t('inspector.delete')}
-          className="hover:text-danger"
-        >
-          <Trash2 aria-hidden className="size-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          iconOnly
-          onClick={onClose}
-          aria-label={t('inspector.close')}
-          title={t('inspector.close')}
-        >
-          <X aria-hidden className="size-3.5" />
-        </Button>
-      </div>
+      <InspectorHeader
+        icon={<Icon aria-hidden className="size-4" />}
+        tone={presentation.tone}
+        label={t(presentation.labelKey)}
+        name={node.name}
+        onDelete={readOnly ? undefined : onDelete}
+        onClose={onClose}
+      />
 
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
+      {/*
+       * A disabled fieldset disables every input, select and button in it. `min-w-0` undoes the
+       * browser's `min-width: min-content` for fieldsets, which would let long values widen it
+       * past the panel.
+       */}
+      <fieldset
+        disabled={readOnly}
+        className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto px-4 py-4"
+      >
         <NameField
           key={node.id}
           name={node.name}
@@ -232,6 +220,104 @@ export function Inspector({
             )}
           </>
         )}
+      </fieldset>
+    </aside>
+  )
+}
+
+function InspectorHeader({
+  icon,
+  tone,
+  label,
+  name,
+  onDelete,
+  onClose,
+}: {
+  icon: ReactNode
+  tone: string
+  label: string
+  name: string
+  /** Hidden if missing, e.g. while read-only. */
+  onDelete: (() => void) | undefined
+  onClose: () => void
+}) {
+  const t = useT()
+  return (
+    <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+      <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-md', tone)}>
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-xs text-muted">{label}</div>
+        <div className="truncate font-medium">{name}</div>
+      </div>
+      {onDelete && (
+        <Button
+          variant="ghost"
+          iconOnly
+          onClick={onDelete}
+          aria-label={t('inspector.delete')}
+          title={t('inspector.delete')}
+          className="hover:text-danger"
+        >
+          <Trash2 aria-hidden className="size-3.5" />
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        iconOnly
+        onClick={onClose}
+        aria-label={t('inspector.close')}
+        title={t('inspector.close')}
+      >
+        <X aria-hidden className="size-3.5" />
+      </Button>
+    </div>
+  )
+}
+
+interface UnsupportedInspectorProps {
+  raw: UnknownRecord
+  onDelete: () => void
+  onClose: () => void
+  readOnly?: boolean
+}
+
+/** Explains an unsupported node and shows what is stored for it, so it can be repaired. */
+export function UnsupportedInspector({
+  raw,
+  onDelete,
+  onClose,
+  readOnly = false,
+}: UnsupportedInspectorProps) {
+  const t = useT()
+  const info = describeUnsupportedNode(raw)
+  const label = t('node.unsupported.label')
+  return (
+    <aside
+      aria-label={t('inspector.label')}
+      className="flex w-80 shrink-0 flex-col border-l border-border bg-background"
+    >
+      <InspectorHeader
+        icon={<CircleHelp aria-hidden className="size-4" />}
+        tone="bg-warning/15 text-warning"
+        label={label}
+        name={info.name ?? label}
+        onDelete={readOnly ? undefined : onDelete}
+        onClose={onClose}
+      />
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
+        <Note tone="warning">
+          {info.type && !isBlockType(info.type)
+            ? t('inspector.unsupported.unknownType', { type: info.type })
+            : t('inspector.unsupported.invalid')}
+        </Note>
+        <div className="space-y-1.5">
+          <div className="text-[0.8125rem] font-medium">{t('inspector.unsupported.data')}</div>
+          <pre className="max-h-96 overflow-auto rounded-md border border-border bg-surface px-2.5 py-2 font-mono text-xs break-all whitespace-pre-wrap select-text">
+            {JSON.stringify(raw, null, 2)}
+          </pre>
+        </div>
       </div>
     </aside>
   )

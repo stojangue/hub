@@ -4,7 +4,14 @@
  * Must stay free of runtime dependencies on Node or the DOM.
  */
 
-import { sanitizeContent, sanitizeName, type BlueprintContent } from './blueprints'
+import {
+  blueprintFormatVersion,
+  migrateContent,
+  readFormatVersion,
+  sanitizeContent,
+  sanitizeName,
+  type BlueprintContent,
+} from './blueprints'
 import { sanitizeRunSummary, type JobRunSummary, type JobStatus } from './runs'
 import { asRecord, isNonEmptyString, isTimestamp } from './validation'
 import { sanitizeWorkItem, type WorkItem } from './work-items'
@@ -25,6 +32,12 @@ export interface BlueprintSnapshot {
 
 export interface Job {
   id: string
+  /**
+   * Version of the stored format, shared with blueprints (`blueprintFormatVersion`); it also
+   * applies to the snapshot. Older jobs are migrated when they are loaded; newer ones cannot
+   * start, since this version may not run them the way they were meant.
+   */
+  formatVersion: number
   name: string
   /** ISO 8601 timestamp. */
   createdAt: string
@@ -47,7 +60,7 @@ export function jobStatus(job: Job): JobStatus {
   return job.lastRun?.status ?? 'ready'
 }
 
-function sanitizeSnapshot(value: unknown): BlueprintSnapshot | null {
+function sanitizeSnapshot(value: unknown, version: number): BlueprintSnapshot | null {
   const input = asRecord(value)
   if (!input || !isNonEmptyString(input['sourceId'])) return null
   const name = sanitizeName(input['name'])
@@ -56,7 +69,7 @@ function sanitizeSnapshot(value: unknown): BlueprintSnapshot | null {
     sourceId: input['sourceId'],
     name,
     snapshotAt: input['snapshotAt'],
-    content: sanitizeContent(input['content']),
+    content: sanitizeContent(migrateContent(input['content'], version)),
   }
 }
 
@@ -80,10 +93,12 @@ export function sanitizeJob(value: unknown): Job | null {
   const input = asRecord(value)
   if (!input || !isNonEmptyString(input['id'])) return null
   const name = sanitizeName(input['name'])
-  const blueprint = sanitizeSnapshot(input['blueprint'])
+  const version = readFormatVersion(input['formatVersion'])
+  const blueprint = sanitizeSnapshot(input['blueprint'], version)
   if (!name || !blueprint || !isTimestamp(input['createdAt'])) return null
   return {
     id: input['id'],
+    formatVersion: Math.max(version, blueprintFormatVersion),
     name,
     createdAt: input['createdAt'],
     blueprint,

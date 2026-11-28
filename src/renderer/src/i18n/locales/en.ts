@@ -212,14 +212,29 @@ export const en = {
   'node.workItem.summary': 'Provided by the job',
   'node.agent.noInstructions': 'No instructions',
   'node.agent.cliMissing': 'Claude Code CLI not available',
+  'node.unsupported.label': 'Unsupported block',
+  'node.unsupported.unknownType': 'Unknown block type “{type}”',
+  'node.unsupported.invalid': 'Cannot be read',
 
   'editor.saving': 'Saving…',
   'editor.saved': 'Saved',
   'editor.saveFailed': 'Could not save. Click to try again.',
+  'editor.newerFormat.title': 'Saved by a newer version of Hub',
+  'editor.newerFormat.description':
+    'This blueprint uses a newer format. It is read-only here so nothing gets lost. Update Hub to edit it.',
+  'editor.unsupported.title': 'Some parts need attention',
+  'editor.unsupported.description':
+    'This version of Hub cannot use some parts (blocks: {nodes}, connections: {connections}). They are kept unchanged and marked on the canvas. Jobs from this blueprint cannot start until they are removed.',
+  'editor.unsupported.remove': 'Remove them',
 
   'inspector.label': 'Inspector',
   'inspector.close': 'Close inspector',
   'inspector.delete': 'Delete block',
+  'inspector.unsupported.unknownType':
+    'This version of Hub does not know blocks of type “{type}”; the block may come from a newer version. It is kept unchanged, and so are its connections, which are not shown.',
+  'inspector.unsupported.invalid':
+    'This block could not be read; its settings or ports may have changed in another version of Hub. It is kept unchanged, and so are its connections, which are not shown.',
+  'inspector.unsupported.data': 'Stored data',
   'inspector.folder.path': 'Folder',
   'inspector.folder.none': 'No folder chosen yet.',
   'inspector.folder.choose': 'Choose folder…',
@@ -281,6 +296,9 @@ export const en = {
   'start.folderMissing': 'The folder of “{name}” does not exist: {path}',
   'start.workItemMissing': 'No work item was provided for “{name}”.',
   'start.agentWithoutTask': 'Agent “{name}” has no instructions, work item or earlier results.',
+  'start.newerFormat': 'This job was saved by a newer version of Hub. Update Hub to run it.',
+  'start.unsupportedParts':
+    'Its blueprint has parts this version of Hub cannot use (blocks: {nodes}, connections: {connections}). Fix the blueprint and create a new job from it.',
 
   'run.noAgents': 'This blueprint has no agents.',
   'run.notRunYet': 'This job has not run yet. Press Run to start it.',
@@ -312,6 +330,11 @@ export const en = {
   'tools.outputLabel': 'Output',
   'settings.devops.title': 'DevOps',
   'settings.ai.title': 'AI',
+  'settings.data.title': 'Data',
+  'settings.dataFolder.label': 'Data folder',
+  'settings.dataFolder.description':
+    'Where Hub keeps your data, as plain files. Back it up like any other folder.',
+  'settings.dataFolder.open': 'Show in Finder',
   'library.collapse': 'Collapse library',
   'library.expand': 'Expand library',
   'library.group.sources': 'Sources',

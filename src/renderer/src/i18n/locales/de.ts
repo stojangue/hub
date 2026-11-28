@@ -221,14 +221,29 @@ export const de: Translations = {
   'node.workItem.summary': 'Kommt vom Auftrag',
   'node.agent.noInstructions': 'Keine Anweisungen',
   'node.agent.cliMissing': 'Claude Code CLI nicht verfügbar',
+  'node.unsupported.label': 'Nicht unterstützter Baustein',
+  'node.unsupported.unknownType': 'Unbekannter Bausteintyp „{type}“',
+  'node.unsupported.invalid': 'Kann nicht gelesen werden',
 
   'editor.saving': 'Wird gespeichert …',
   'editor.saved': 'Gespeichert',
   'editor.saveFailed': 'Speichern fehlgeschlagen. Klicke, um es erneut zu versuchen.',
+  'editor.newerFormat.title': 'Mit einer neueren Version von Hub gespeichert',
+  'editor.newerFormat.description':
+    'Diese Blaupause verwendet ein neueres Format. Sie ist hier schreibgeschützt, damit nichts verloren geht. Aktualisiere Hub, um sie zu bearbeiten.',
+  'editor.unsupported.title': 'Einige Teile brauchen Aufmerksamkeit',
+  'editor.unsupported.description':
+    'Diese Version von Hub kann einige Teile nicht verwenden (Bausteine: {nodes}, Verbindungen: {connections}). Sie bleiben unverändert erhalten und sind auf der Arbeitsfläche markiert. Jobs aus dieser Blaupause können erst starten, wenn sie entfernt sind.',
+  'editor.unsupported.remove': 'Entfernen',
 
   'inspector.label': 'Inspektor',
   'inspector.close': 'Inspektor schließen',
   'inspector.delete': 'Baustein löschen',
+  'inspector.unsupported.unknownType':
+    'Diese Version von Hub kennt keine Bausteine vom Typ „{type}“; der Baustein stammt vielleicht aus einer neueren Version. Er bleibt unverändert erhalten, ebenso seine Verbindungen, die nicht angezeigt werden.',
+  'inspector.unsupported.invalid':
+    'Dieser Baustein konnte nicht gelesen werden; seine Einstellungen oder Anschlüsse haben sich vielleicht in einer anderen Version von Hub geändert. Er bleibt unverändert erhalten, ebenso seine Verbindungen, die nicht angezeigt werden.',
+  'inspector.unsupported.data': 'Gespeicherte Daten',
   'inspector.folder.path': 'Ordner',
   'inspector.folder.none': 'Noch kein Ordner gewählt.',
   'inspector.folder.choose': 'Ordner wählen …',
@@ -291,6 +306,10 @@ export const de: Translations = {
   'start.workItemMissing': 'Für „{name}“ wurde kein Arbeitselement angegeben.',
   'start.agentWithoutTask':
     'Agent „{name}“ hat weder Anweisungen noch ein Arbeitselement noch vorherige Ergebnisse.',
+  'start.newerFormat':
+    'Dieser Job wurde mit einer neueren Version von Hub gespeichert. Aktualisiere Hub, um ihn auszuführen.',
+  'start.unsupportedParts':
+    'Seine Blaupause enthält Teile, die diese Version von Hub nicht verwenden kann (Bausteine: {nodes}, Verbindungen: {connections}). Korrigiere die Blaupause und erstelle daraus einen neuen Job.',
 
   'run.noAgents': 'Diese Blaupause hat keine Agenten.',
   'run.notRunYet':
@@ -323,6 +342,11 @@ export const de: Translations = {
   'tools.outputLabel': 'Ausgabe',
   'settings.devops.title': 'DevOps',
   'settings.ai.title': 'KI',
+  'settings.data.title': 'Daten',
+  'settings.dataFolder.label': 'Datenordner',
+  'settings.dataFolder.description':
+    'Hier speichert Hub deine Daten als einfache Dateien. Sichere ihn wie jeden anderen Ordner.',
+  'settings.dataFolder.open': 'Im Finder zeigen',
   'library.collapse': 'Bibliothek einklappen',
   'library.expand': 'Bibliothek ausklappen',
   'library.group.sources': 'Quellen',

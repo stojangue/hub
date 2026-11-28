@@ -27,6 +27,8 @@ function subscribe<E extends keyof IpcEventContract>(
 const api: HubApi = {
   app: {
     getVersion: () => invoke(IpcChannel.AppGetVersion),
+    dataFolder: () => invoke(IpcChannel.AppDataFolder),
+    openDataFolder: () => invoke(IpcChannel.AppOpenDataFolder),
   },
   settings: {
     get: () => invoke(IpcChannel.SettingsGet),

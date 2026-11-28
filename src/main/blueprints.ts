@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import {
+  blueprintFormatVersion,
   emptyContent,
+  isNewerFormat,
   sanitizeBlueprint,
   sanitizeContent,
   sanitizeName,
   type Blueprint,
 } from '@shared/blueprints'
 import { asRecord } from '@shared/validation'
-import { createCollectionStore } from './json-store'
+import { createEntryStore } from './entry-store'
 
-const store = createCollectionStore('blueprints.json', sanitizeBlueprint)
+const store = createEntryStore('blueprints', sanitizeBlueprint, (blueprint) => blueprint.createdAt)
 
 export function listBlueprints(): Promise<Blueprint[]> {
   return store.all()
@@ -26,6 +28,7 @@ export function createBlueprint(input: unknown): Promise<Blueprint> {
   const now = new Date().toISOString()
   return store.add({
     id: randomUUID(),
+    formatVersion: blueprintFormatVersion,
     name,
     createdAt: now,
     updatedAt: now,
@@ -39,6 +42,11 @@ export async function updateBlueprint(id: unknown, input: unknown): Promise<Blue
   const name = 'name' in record ? sanitizeName(record['name']) : undefined
   if (name === null) throw new Error('A blueprint needs a name.')
   const content = 'content' in record ? sanitizeContent(record['content']) : undefined
+  const existing = await getBlueprint(id)
+  // Saving would replace what a newer version stored with what this one understood of it.
+  if (existing && isNewerFormat(existing.formatVersion)) {
+    throw new Error('The blueprint was saved by a newer version of Hub and cannot be changed.')
+  }
   const updated =
     typeof id === 'string'
       ? await store.update(id, (blueprint) => ({

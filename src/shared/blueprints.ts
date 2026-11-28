@@ -12,7 +12,7 @@ import {
   type BlockConfigs,
   type BlockType,
 } from './blocks'
-import { asRecord, isNonEmptyString, isTimestamp } from './validation'
+import { asRecord, isNonEmptyString, isTimestamp, type UnknownRecord } from './validation'
 
 /** Longest accepted name, in characters. Longer names are cut off. */
 export const maxNameLength = 120
@@ -20,6 +20,8 @@ export const maxNameLength = 120
 /** Upper bounds, so a broken file or payload cannot grow without limit. */
 const maxNodes = 500
 const maxConnections = 2000
+/** Longest kept unsupported part, as JSON. Larger ones are dropped (the file is backed up). */
+const maxUnsupportedLength = 100_000
 
 export interface Position {
   x: number
@@ -50,13 +52,31 @@ export interface BlueprintConnection {
   to: PortRef
 }
 
+/**
+ * Stored nodes and connections this version of the app cannot use: an unknown block type
+ * (e.g. from a newer version), settings or ports that no longer fit, or a connection that
+ * breaks the rules. They are kept exactly as stored instead of being dropped, so nothing is
+ * lost, and are shown as needing attention. Each load tries them again, so a later version
+ * that understands them brings them back as regular nodes and connections.
+ */
+export interface UnsupportedParts {
+  nodes: UnknownRecord[]
+  connections: UnknownRecord[]
+}
+
 export interface BlueprintContent {
   nodes: BlueprintNode[]
   connections: BlueprintConnection[]
+  unsupported: UnsupportedParts
 }
 
 export interface Blueprint {
   id: string
+  /**
+   * Version of the stored format (see `blueprintFormatVersion`). Older blueprints are
+   * migrated when they are loaded; newer ones are shown read-only.
+   */
+  formatVersion: number
   name: string
   /** ISO 8601 timestamp. */
   createdAt: string
@@ -76,7 +96,60 @@ export interface UpdateBlueprintInput {
 }
 
 export function emptyContent(): BlueprintContent {
-  return { nodes: [], connections: [] }
+  return { nodes: [], connections: [], unsupported: { nodes: [], connections: [] } }
+}
+
+// --- Format versions ----------------------------------------------------------------------
+
+/**
+ * Version of the stored blueprint format, also used for the snapshot in a job. Raise it when
+ * stored data changes in a way older or newer versions would read differently, and add a
+ * migration below if the change can be done mechanically. Changes that cannot (e.g. a block
+ * that now behaves differently) are left to `sanitizeContent`, which keeps what it cannot use
+ * as unsupported parts for the user to repair.
+ */
+export const blueprintFormatVersion = 1
+
+/** Files from before versioning count as version 0. */
+export function readFormatVersion(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0
+}
+
+/** Whether data was written by a newer version of the app, which this one must not overwrite. */
+export function isNewerFormat(version: number): boolean {
+  return version > blueprintFormatVersion
+}
+
+/**
+ * Mechanical upgrades of stored content, keyed by the version they upgrade from. They work on
+ * the raw stored data, before it is sanitized, and must not fail on unexpected input.
+ */
+const contentMigrations: Record<number, (content: UnknownRecord) => UnknownRecord> = {
+  // 0 → 1: the agent setting `github` was renamed to `devops` when it began to cover other
+  // platforms.
+  0: (content) => ({
+    ...content,
+    nodes: Array.isArray(content['nodes'])
+      ? content['nodes'].map((raw: unknown) => {
+          const node = asRecord(raw)
+          const config = asRecord(node?.['config'])
+          if (node?.['type'] !== 'agent' || !config || !('github' in config)) return raw
+          const { github, ...rest } = config
+          return { ...node, config: { devops: github, ...rest } }
+        })
+      : content['nodes'],
+  }),
+}
+
+/** Brings stored content from `version` up to `blueprintFormatVersion`. */
+export function migrateContent(value: unknown, version: number): unknown {
+  let content = asRecord(value)
+  if (!content) return value
+  for (let from = version; from < blueprintFormatVersion; from++) {
+    const migrate = contentMigrations[from]
+    if (migrate) content = migrate(content)
+  }
+  return content
 }
 
 /** Trims a name and cuts it to `maxNameLength`. Returns `null` if nothing is left. */
@@ -207,37 +280,145 @@ function sanitizeRef(value: unknown): PortRef | null {
   return { nodeId: input['nodeId'], port: input['port'] }
 }
 
+/** Keeps a part as unsupported if it is an object of reasonable size. */
+function keepUnsupported(list: UnknownRecord[], raw: unknown, max: number): void {
+  const record = asRecord(raw)
+  if (!record || list.length >= max) return
+  try {
+    if (JSON.stringify(record).length <= maxUnsupportedLength) list.push(record)
+  } catch {
+    // Not serializable, so it cannot be stored either.
+  }
+}
+
+function listOf(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
 /**
- * Validates canvas content. Drops nodes and connections that are broken, and connections
- * that break the rules (wrong types, a second link into a single input, cycles).
+ * Validates canvas content. Nodes and connections it cannot use, e.g. of an unknown block
+ * type, with a missing port or breaking the rules (wrong types, a second link into a single
+ * input, cycles), are kept as unsupported parts instead of being dropped. Unsupported parts
+ * from earlier loads are tried again, after the regular ones.
  */
 export function sanitizeContent(value: unknown): BlueprintContent {
   const input = asRecord(value)
-  const nodes: BlueprintNode[] = []
+  const previous = asRecord(input?.['unsupported'])
+  const content = emptyContent()
+  const { unsupported } = content
+
   const nodeIds = new Set<string>()
-  for (const raw of Array.isArray(input?.['nodes']) ? input['nodes'] : []) {
+  for (const raw of [...listOf(input?.['nodes']), ...listOf(previous?.['nodes'])]) {
     const node = sanitizeNode(raw)
-    if (!node || nodeIds.has(node.id) || nodes.length >= maxNodes) continue
-    if (!canAddBlock(node.type, nodes)) continue
+    if (
+      !node ||
+      nodeIds.has(node.id) ||
+      content.nodes.length >= maxNodes ||
+      !canAddBlock(node.type, content.nodes)
+    ) {
+      keepUnsupported(unsupported.nodes, raw, maxNodes)
+      continue
+    }
     nodeIds.add(node.id)
-    nodes.push(node)
+    content.nodes.push(node)
   }
 
-  const content: BlueprintContent = { nodes, connections: [] }
   const connectionIds = new Set<string>()
-  for (const raw of Array.isArray(input?.['connections']) ? input['connections'] : []) {
+  for (const raw of [...listOf(input?.['connections']), ...listOf(previous?.['connections'])]) {
     const record = asRecord(raw)
     const from = sanitizeRef(record?.['from'])
     const to = sanitizeRef(record?.['to'])
     const id = record?.['id']
-    if (!from || !to || !isNonEmptyString(id) || connectionIds.has(id)) continue
-    if (content.connections.length >= maxConnections) break
-    const check = checkConnection(content, from, to)
-    if (!check.ok || check.replaces.length > 0) continue
+    const check = from && to ? checkConnection(content, from, to) : null
+    if (
+      !from ||
+      !to ||
+      !isNonEmptyString(id) ||
+      connectionIds.has(id) ||
+      content.connections.length >= maxConnections ||
+      !check?.ok ||
+      check.replaces.length > 0
+    ) {
+      keepUnsupported(unsupported.connections, raw, maxConnections)
+      continue
+    }
     connectionIds.add(id)
     content.connections.push({ id, from, to })
   }
   return content
+}
+
+export function hasUnsupportedParts(content: BlueprintContent): boolean {
+  return content.unsupported.nodes.length > 0 || content.unsupported.connections.length > 0
+}
+
+/** What can still be read from an unsupported node, to show it on the canvas. */
+export interface UnsupportedNodeInfo {
+  id: string | null
+  type: string | null
+  name: string | null
+  /** `null` if it has no usable position. */
+  position: Position | null
+}
+
+export function describeUnsupportedNode(raw: UnknownRecord): UnsupportedNodeInfo {
+  const position = asRecord(raw['position'])
+  const x = position?.['x']
+  const y = position?.['y']
+  return {
+    id: isNonEmptyString(raw['id']) ? raw['id'] : null,
+    type: isNonEmptyString(raw['type']) ? raw['type'].slice(0, maxNameLength) : null,
+    name: sanitizeName(raw['name']),
+    position:
+      typeof x === 'number' && Number.isFinite(x) && typeof y === 'number' && Number.isFinite(y)
+        ? sanitizePosition(position)
+        : null,
+  }
+}
+
+/** The node IDs an unsupported connection refers to, as far as they can be read. */
+export function unsupportedConnectionNodes(raw: UnknownRecord): string[] {
+  return [asRecord(raw['from'])?.['nodeId'], asRecord(raw['to'])?.['nodeId']].filter(
+    (id): id is string => typeof id === 'string',
+  )
+}
+
+/** Removes a node and every connection, regular or unsupported, that refers to it. */
+export function removeNode(content: BlueprintContent, nodeId: string): BlueprintContent {
+  return {
+    nodes: content.nodes.filter((node) => node.id !== nodeId),
+    connections: content.connections.filter(
+      (connection) => connection.from.nodeId !== nodeId && connection.to.nodeId !== nodeId,
+    ),
+    unsupported: {
+      nodes: content.unsupported.nodes,
+      connections: content.unsupported.connections.filter(
+        (raw) => !unsupportedConnectionNodes(raw).includes(nodeId),
+      ),
+    },
+  }
+}
+
+/**
+ * Removes an unsupported node, and the unsupported connections to it unless a regular node
+ * has the same ID.
+ */
+export function removeUnsupportedNode(content: BlueprintContent, index: number): BlueprintContent {
+  const raw = content.unsupported.nodes[index]
+  if (!raw) return content
+  const id = describeUnsupportedNode(raw).id
+  const orphaned = id !== null && !content.nodes.some((node) => node.id === id)
+  return {
+    ...content,
+    unsupported: {
+      nodes: content.unsupported.nodes.filter((_, other) => other !== index),
+      connections: orphaned
+        ? content.unsupported.connections.filter(
+            (connection) => !unsupportedConnectionNodes(connection).includes(id),
+          )
+        : content.unsupported.connections,
+    },
+  }
 }
 
 /** Validates one stored blueprint. Returns `null` if it cannot be repaired. */
@@ -246,11 +427,15 @@ export function sanitizeBlueprint(value: unknown): Blueprint | null {
   if (!input || !isNonEmptyString(input['id'])) return null
   const name = sanitizeName(input['name'])
   if (!name || !isTimestamp(input['createdAt'])) return null
+  const version = readFormatVersion(input['formatVersion'])
   return {
     id: input['id'],
+    // Older content is migrated, so it is stored as the current version from now on. Newer
+    // content keeps its version, so it is never saved over with what this version understood.
+    formatVersion: Math.max(version, blueprintFormatVersion),
     name,
     createdAt: input['createdAt'],
     updatedAt: isTimestamp(input['updatedAt']) ? input['updatedAt'] : input['createdAt'],
-    content: sanitizeContent(input['content']),
+    content: sanitizeContent(migrateContent(input['content'], version)),
   }
 }

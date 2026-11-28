@@ -1,4 +1,5 @@
 import { app, BrowserWindow } from 'electron'
+import { dataFolderReady } from './data-folder'
 import { registerIpc } from './ipc'
 import { recoverInterruptedRuns, stopAllRunsSync } from './runs/runner'
 import { loadSettings } from './settings'
@@ -8,6 +9,10 @@ import { createMainWindow } from './window'
 loadSettings()
 
 app.whenReady().then(() => {
+  // Started right away, so data from older versions is moved before the first screen asks.
+  dataFolderReady().catch((error: unknown) =>
+    console.error('Failed to prepare the data folder', error),
+  )
   registerIpc()
   createMainWindow()
   recoverInterruptedRuns().catch((error: unknown) =>

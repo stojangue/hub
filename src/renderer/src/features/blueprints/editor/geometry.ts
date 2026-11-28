@@ -1,5 +1,6 @@
 import { blockDefinitions, type BlockType, type PortSide } from '@shared/blocks'
-import type { BlueprintNode, Position } from '@shared/blueprints'
+import { describeUnsupportedNode, type BlueprintNode, type Position } from '@shared/blueprints'
+import type { UnknownRecord } from '@shared/validation'
 
 /**
  * The visible part of the canvas. `x`/`y` is the screen offset of the canvas origin
@@ -66,4 +67,9 @@ export function connectionMidpoint(from: Position, to: Position): Position {
     x: (from.x + 3 * (from.x + bend) + 3 * (to.x - bend) + to.x) / 8,
     y: (from.y + 3 * from.y + 3 * to.y + to.y) / 8,
   }
+}
+
+/** Where an unsupported node is drawn: its stored position, or a stack for those without. */
+export function unsupportedPosition(raw: UnknownRecord, index: number): Position {
+  return describeUnsupportedNode(raw).position ?? { x: index * 24, y: index * 24 }
 }

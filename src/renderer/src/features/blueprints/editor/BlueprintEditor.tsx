@@ -1,9 +1,13 @@
-import { CircleAlert, LoaderCircle } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CircleAlert, Info, LoaderCircle, TriangleAlert } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { blockDefinitions, canAddBlock, type BlockType } from '@shared/blocks'
 import {
   checkConnection,
+  hasUnsupportedParts,
+  isNewerFormat,
   nextNodeName,
+  removeNode,
+  removeUnsupportedNode,
   sourceOf,
   type Blueprint,
   type BlueprintContent,
@@ -12,13 +16,15 @@ import {
   type Position,
 } from '@shared/blueprints'
 import { useClaudeStatus } from '@renderer/claude/use-claude-status'
+import { Button } from '@renderer/components/Button'
 import { useT, type TranslateFn } from '@renderer/i18n'
 import { api } from '@renderer/lib/api'
+import { cn } from '@renderer/lib/cn'
 import { useSettings } from '@renderer/settings/context'
 import { blockPresentation } from '../blocks'
 import { Canvas, type Selection } from './Canvas'
 import { headerHeight, nodeWidth, viewCenter, type View } from './geometry'
-import { Inspector } from './Inspector'
+import { Inspector, UnsupportedInspector } from './Inspector'
 import { Library } from './Library'
 import type { NodeSummary } from './NodeCard'
 import { useFolderStatus } from './use-folder-status'
@@ -68,6 +74,8 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
   const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1 })
   const [selection, setSelection] = useState<Selection>(null)
   const [saveState, setSaveState] = useState<SaveState>('saved')
+  // Saving would replace what a newer version stored with what this one understood of it.
+  const readOnly = isNewerFormat(blueprint.formatVersion)
   const claude = useClaudeStatus()
   const cliAvailable = claude.data ? claude.data.state === 'installed' : undefined
 
@@ -105,6 +113,7 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
 
   const change = useCallback(
     (update: (content: BlueprintContent) => BlueprintContent) => {
+      if (readOnly) return
       setContent((current) => {
         const next = update(current)
         if (next === current) return current
@@ -114,7 +123,7 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
         return next
       })
     },
-    [flush],
+    [flush, readOnly],
   )
 
   // Leaving the page saves what is still pending.
@@ -170,6 +179,23 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
     }))
   }
 
+  function moveUnsupported(index: number, position: Position) {
+    change((current) => ({
+      ...current,
+      unsupported: {
+        ...current.unsupported,
+        nodes: current.unsupported.nodes.map((raw, other) =>
+          other === index ? { ...raw, position } : raw,
+        ),
+      },
+    }))
+  }
+
+  function removeAllUnsupported() {
+    change((current) => ({ ...current, unsupported: { nodes: [], connections: [] } }))
+    setSelection(null)
+  }
+
   function updateNode(updated: BlueprintNode) {
     change((current) => ({
       ...current,
@@ -194,20 +220,19 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
   const deleteSelection = useCallback(
     (target: Selection) => {
       if (!target) return
-      change((current) =>
-        target.kind === 'node'
-          ? {
-              nodes: current.nodes.filter((node) => node.id !== target.id),
-              connections: current.connections.filter(
-                (connection) =>
-                  connection.from.nodeId !== target.id && connection.to.nodeId !== target.id,
-              ),
-            }
-          : {
+      change((current) => {
+        switch (target.kind) {
+          case 'node':
+            return removeNode(current, target.id)
+          case 'unsupported':
+            return removeUnsupportedNode(current, target.index)
+          case 'connection':
+            return {
               ...current,
               connections: current.connections.filter((connection) => connection.id !== target.id),
-            },
-      )
+            }
+        }
+      })
       setSelection(null)
     },
     [change],
@@ -239,13 +264,47 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
   )
   const selectedNode =
     selection?.kind === 'node' ? content.nodes.find((node) => node.id === selection.id) : undefined
+  const selectedUnsupported =
+    selection?.kind === 'unsupported' ? content.unsupported.nodes[selection.index] : undefined
+
+  const notices: ReactNode[] = []
+  if (readOnly) {
+    notices.push(
+      <Notice
+        key="newer"
+        tone="neutral"
+        title={t('editor.newerFormat.title')}
+        description={t('editor.newerFormat.description')}
+      />,
+    )
+  }
+  if (hasUnsupportedParts(content)) {
+    notices.push(
+      <Notice
+        key="unsupported"
+        tone="warning"
+        title={t('editor.unsupported.title')}
+        description={t('editor.unsupported.description', {
+          nodes: content.unsupported.nodes.length,
+          connections: content.unsupported.connections.length,
+        })}
+        action={
+          readOnly ? undefined : (
+            <Button onClick={removeAllUnsupported}>{t('editor.unsupported.remove')}</Button>
+          )
+        }
+      />,
+    )
+  }
 
   return (
     <div className="flex h-full">
-      <Library
-        onAdd={(type) => addBlock(type, viewCenter(view))}
-        canAdd={(type) => canAddBlock(type, content.nodes)}
-      />
+      {!readOnly && (
+        <Library
+          onAdd={(type) => addBlock(type, viewCenter(view))}
+          canAdd={(type) => canAddBlock(type, content.nodes)}
+        />
+      )}
       <Canvas
         content={content}
         view={view}
@@ -254,10 +313,13 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
         onSelect={setSelection}
         summaries={summaries}
         onMoveNode={moveNode}
+        onMoveUnsupported={moveUnsupported}
         onConnect={connect}
         onDropBlock={addBlock}
         onDeleteConnection={(id) => deleteSelection({ kind: 'connection', id })}
         status={<SaveStatus state={saveState} onRetry={flush} />}
+        notice={notices.length > 0 ? notices : undefined}
+        readOnly={readOnly}
       />
       {selectedNode && (
         <Inspector
@@ -272,8 +334,48 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
           }
           cliAvailable={cliAvailable}
           folderConnected={sourceOf(content, selectedNode.id, 'folder') !== undefined}
+          readOnly={readOnly}
         />
       )}
+      {selection?.kind === 'unsupported' && selectedUnsupported && (
+        <UnsupportedInspector
+          key={selection.index}
+          raw={selectedUnsupported}
+          onDelete={() => deleteSelection(selection)}
+          onClose={() => setSelection(null)}
+          readOnly={readOnly}
+        />
+      )}
+    </div>
+  )
+}
+
+function Notice({
+  tone,
+  title,
+  description,
+  action,
+}: {
+  tone: 'neutral' | 'warning'
+  title: string
+  description: string
+  action?: ReactNode
+}) {
+  const NoticeIcon = tone === 'warning' ? TriangleAlert : Info
+  return (
+    <div
+      role="status"
+      className="flex w-full max-w-xl items-start gap-2.5 rounded-xl border border-border bg-background/95 px-4 py-3 text-[0.8125rem] shadow-sm backdrop-blur"
+    >
+      <NoticeIcon
+        aria-hidden
+        className={cn('mt-0.5 size-4 shrink-0', tone === 'warning' ? 'text-warning' : 'text-muted')}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">{title}</p>
+        <p className="mt-0.5 text-muted">{description}</p>
+      </div>
+      {action}
     </div>
   )
 }
