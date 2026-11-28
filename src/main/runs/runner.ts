@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { BrowserWindow } from 'electron'
-import type { BlueprintContent } from '@shared/blueprints'
+import type { BlueprintContent, BlueprintNode } from '@shared/blueprints'
 import {
   effectiveSource,
   hasUnsupportedParts,
@@ -54,6 +54,7 @@ import { claudeCommand, claudeEnv, isClaudeInstalled } from '../claude-cli'
 import { folderExists } from '../folders'
 import {
   getIssueContent,
+  findPullRequestForBranch,
   getPullRequestContent,
   type IssueContent,
   type PullRequestContent,
@@ -68,8 +69,11 @@ import {
   findRemote,
   inspectRepository,
   removePullRequestWorktree,
+  syncWorktree,
   worktreeGitEnv,
+  worktreeHead,
   type PullRequestWorktree,
+  type WorktreeSync,
 } from './pr-worktree'
 import { deleteRun, readRun, writeRun, writeRunSync } from './store'
 
@@ -402,12 +406,39 @@ function describeLoop(loop: LoopInfo): string {
     '## Repeated work',
     '',
     `This part of the job runs again, round after round, up to ${loop.maxRounds} times; this is round ${loop.round}. The results below include those of the round before.`,
-    'Content loaded at the start of the run, such as the work item above, may be out of date by now; read what you need again.',
+    'The results below may describe an older state of the branch; the state of the branch and the review threads in this prompt were read just before you started.',
   ].join('\n')
 }
 
 /** What a switch is asked: which of its outputs fits the result it got. */
-function buildSwitchPrompt(config: SwitchConfig, input: Omit<AgentRunInput, 'prompt'>): string {
+/**
+ * The pull request's review threads as they are right before a switch decides, so it judges
+ * from facts rather than only from what the agent before it wrote.
+ */
+function describeThreadsNow(number: number, content: PullRequestContent | null): string {
+  const heading = `## Pull request #${number} now`
+  if (!content) return `${heading}\n\nIts review threads could not be loaded.`
+  const open = content.threads.filter((thread) => !thread.isResolved)
+  const lines = [
+    heading,
+    '',
+    `Loaded just now: ${open.length} unresolved and ${content.threads.length - open.length} resolved review threads${content.totalThreads > content.threads.length ? ` (${content.threads.length} of ${content.totalThreads} loaded)` : ''}.`,
+  ]
+  for (const thread of open.slice(0, 30)) {
+    const last = thread.comments.at(-1)
+    const text = (last?.body ?? '').replace(/\s+/g, ' ').trim()
+    lines.push(
+      `- ${threadLocation(thread)}${thread.isOutdated ? ' (outdated)' : ''}: ${last?.author ?? 'unknown'}: ${text.length > 300 ? `${text.slice(0, 300)}…` : text}`,
+    )
+  }
+  return lines.join('\n')
+}
+
+function buildSwitchPrompt(
+  config: SwitchConfig,
+  input: Omit<AgentRunInput, 'prompt'>,
+  threadsNow: string | null,
+): string {
   const parts = [
     [
       'You decide how a workflow continues. Read the results below and pick the one output whose condition fits best.',
@@ -436,9 +467,10 @@ function buildSwitchPrompt(config: SwitchConfig, input: Omit<AgentRunInput, 'pro
         ].join('\n\n')
       : '## Results to judge\n\n(none)',
   )
+  if (threadsNow) parts.push(threadsNow)
   parts.push(
     config.devops === 'read'
-      ? 'You may check facts on GitHub with the GitHub CLI (`gh`), read only, e.g. whether review threads are still open.'
+      ? 'The review threads above are current. You may check other facts on GitHub with read-only GitHub CLI commands such as `gh pr view` and `gh pr checks`.'
       : 'Decide from the results above alone; do not use any tools.',
   )
   parts.push(
@@ -462,6 +494,7 @@ function buildPrompt(
   workItemContent: WorkItemContent | null,
   worktree: PullRequestWorktree | null,
   loop: LoopInfo | null,
+  current: string[] = [],
 ): string {
   const parts: string[] = []
   const task = config.instructions.trim()
@@ -475,6 +508,7 @@ function buildPrompt(
   } else if (input.workItem && worktree?.kind === 'issue') {
     parts.push(describeIssueWork(config, input.workItem, worktree))
   }
+  parts.push(...current)
   if (input.previous.length > 0) {
     parts.push(
       [
@@ -485,7 +519,56 @@ function buildPrompt(
   }
   if (loop) parts.push(describeLoop(loop))
   parts.push(describeDevOpsAccess(config, worktree))
+  parts.push(describeCommands())
   return parts.join('\n\n')
+}
+
+/**
+ * Claude Code checks each part of a combined shell command on its own, and refuses a part no
+ * rule allows, e.g. `git fetch origin main 2>&1` or `| python3`, with no one there to approve.
+ */
+function describeCommands(): string {
+  return [
+    '## Running commands',
+    '',
+    'Run each `git` and `gh` command in a Bash call of its own, exactly in the forms allowed above: do not chain it with `;`, `&&` or `||`, do not add redirections such as `2>&1` or `>/dev/null`, and do not pipe its output into other programs such as `python3`, `node` or `jq`. For `gh` output, use its own `--jq` option instead. Combined commands are refused, because no one is there to approve them.',
+  ].join('\n')
+}
+
+/** Tells the agent where its branch stands, as `syncWorktree` left it. */
+function describeSync(worktree: PullRequestWorktree, sync: WorktreeSync): string {
+  const remote = `\`${worktree.remote}/${worktree.headBranch}\``
+  const base = worktree.baseBranch
+    ? ` \`${worktree.remote}/${worktree.baseBranch}\` is fetched too, so you can compare with it without fetching.`
+    : ''
+  const intro = `## State of the branch\n\nJust before you started, the app checked out \`${worktree.branch}\` and fetched ${remote}.${base}`
+  const text = (() => {
+    switch (sync.state) {
+      case 'current':
+        return `The branch is up to date with ${remote} (at ${short(sync.head)}). You do not need to fetch or pull.`
+      case 'updated':
+        return `It was behind and has been moved forward by ${sync.commits} commit(s) to ${short(sync.head)}, so it now matches ${remote}. You do not need to fetch or pull.`
+      case 'rebased':
+        return `GitHub had ${sync.behind} new commit(s); the ${sync.ahead} local commit(s) that were not pushed yet have been put on top of them (now at ${short(sync.head)}). Push them as described above.`
+      case 'ahead':
+        return `The branch has ${sync.ahead} commit(s) that are not on GitHub yet (at ${short(sync.head)}); GitHub has nothing newer. Push them as described above if they belong to your work.`
+      case 'behind':
+        return sync.reason === 'uncommittedChanges'
+          ? `GitHub has ${sync.behind} newer commit(s), but the worktree has uncommitted changes, so it was not updated. Look at \`git status\` first; a push will be refused until the branch contains the newer commits.`
+          : `GitHub has ${sync.behind} newer commit(s) that conflict with the ${sync.ahead} local commit(s), so the branch was left as it is. Do not force-push; say in your answer that the branch needs to be brought up to date by hand.`
+      case 'notOnRemote':
+        return `The branch is not on GitHub yet (at ${short(sync.head)}).`
+      case 'busy':
+        return `Another agent works in this worktree right now, so it was not updated; it is at ${short(sync.head)}.`
+      case 'failed':
+        return `This failed (${sync.message}), so the branch may not be up to date; mention it in your answer if it matters.`
+    }
+  })()
+  return `${intro}\n\n${text}`
+}
+
+function short(commit: string): string {
+  return commit.slice(0, 9)
 }
 
 // --- Start checks -------------------------------------------------------------------------
@@ -896,34 +979,145 @@ function loopInfo(entry: ActiveRun, step: RunPlanStep): LoopInfo | null {
   return repeat?.repeat ? { round: step.round, maxRounds: repeat.repeat.maxRounds } : null
 }
 
+/** The pull request a step is about: the work item, or the one for the issue's branch. */
+async function pullRequestOf(entry: ActiveRun, nodeId: string): Promise<number | null> {
+  const item = workItemOf(entry.job, nodeId)
+  if (!item) return null
+  if (item.kind === 'pullRequest') return item.number
+  const folder = folderOf(entry.job.blueprint.content, nodeId)
+  const worktree = folder ? entry.worktrees.get(worktreeKey(folder, item)) : undefined
+  if (!worktree) return null
+  return findPullRequestForBranch(item.repository, worktree.headBranch)
+}
+
+async function startSwitch(
+  entry: ActiveRun,
+  step: RunPlanStep,
+  node: Extract<BlueprintNode, { type: 'switch' }>,
+): Promise<void> {
+  // Shown as running while the pull request is loaded.
+  updateAgent(entry, step.id, { status: 'running', startedAt: new Date().toISOString() })
+  activity(entry, 'agentStarted', step.id)
+  const workItem = workItemOf(entry.job, node.id)
+  let threadsNow: string | null = null
+  try {
+    const number = await pullRequestOf(entry, node.id)
+    if (number !== null && workItem) {
+      const content = await getPullRequestContent(workItem.repository, number).catch(() => null)
+      threadsNow = describeThreadsNow(number, content)
+    }
+  } catch (error) {
+    console.error(`Could not load the pull request for switch ${node.id}`, error)
+  }
+  // The run may have been stopped meanwhile; then no process is started.
+  if (entry.stopping || active.get(entry.job.id) !== entry) {
+    agentFinished(entry, step, { stopped: true })
+    return
+  }
+  const base = { folder: null, worktree: null, workItem, previous: previousResults(entry, step) }
+  const input: AgentRunInput = {
+    ...base,
+    prompt: buildSwitchPrompt(node.config, base, threadsNow),
+  }
+  updateAgent(entry, step.id, { input })
+  // It only reads, so it gets an agent's settings for reading, with its own model.
+  const config: AgentConfig = {
+    ...blockDefinitions.agent.defaultConfig(),
+    model: node.config.model,
+    permissionMode: 'plan',
+    devops: node.config.devops,
+  }
+  runProcess(entry, step, config, input, null)
+}
+
 function startAgent(entry: ActiveRun, step: RunPlanStep): void {
   const content = entry.job.blueprint.content
   const node = content.nodes.find((candidate) => candidate.id === step.nodeId)
   if (node?.type === 'switch') {
-    const workItem = workItemOf(entry.job, node.id)
-    const base = { folder: null, worktree: null, workItem, previous: previousResults(entry, step) }
-    const input: AgentRunInput = { ...base, prompt: buildSwitchPrompt(node.config, base) }
-    updateAgent(entry, step.id, { status: 'running', startedAt: new Date().toISOString(), input })
-    activity(entry, 'agentStarted', step.id)
-    // It only reads, so it gets an agent's settings for reading, with its own model.
-    const config: AgentConfig = {
-      ...blockDefinitions.agent.defaultConfig(),
-      model: node.config.model,
-      permissionMode: 'plan',
-      devops: node.config.devops,
-    }
-    runProcess(entry, step, config, input, null)
+    void startSwitch(entry, step, node)
     return
   }
   if (node?.type !== 'agent') {
     updateAgent(entry, step.id, { status: 'failed', error: 'Not an agent.' })
     return
   }
+  void startAgentNode(entry, step, node)
+}
 
+/** Syncs of a worktree in progress, by its root, so agents starting together share one. */
+const syncs = new Map<string, Promise<WorktreeSync>>()
+
+/**
+ * Brings the worktree up to date unless another agent of the run works in it right now,
+ * which would see its files change under it.
+ */
+async function syncForStep(
+  entry: ActiveRun,
+  step: RunPlanStep,
+  worktree: PullRequestWorktree,
+): Promise<WorktreeSync> {
+  const pending = syncs.get(worktree.root)
+  if (pending) return pending
+  const busy = Object.values(entry.run.agents).some(
+    (agent) =>
+      agent.stepId !== step.id &&
+      agent.status === 'running' &&
+      agent.input?.worktree?.startsWith(worktree.root) === true,
+  )
+  if (busy) {
+    return { state: 'busy', head: await worktreeHead(worktree) }
+  }
+  const sync = syncWorktree(worktree).finally(() => syncs.delete(worktree.root))
+  syncs.set(worktree.root, sync)
+  return sync
+}
+
+/**
+ * Starts an agent once its worktree is up to date with GitHub, and with the pull request and
+ * its review threads loaded again, so each round of a loop works on what is there now.
+ */
+async function startAgentNode(
+  entry: ActiveRun,
+  step: RunPlanStep,
+  node: Extract<BlueprintNode, { type: 'agent' }>,
+): Promise<void> {
+  // Shown as running while the branch is brought up to date.
+  updateAgent(entry, step.id, { status: 'running', startedAt: new Date().toISOString() })
+  activity(entry, 'agentStarted', step.id)
+
+  const content = entry.job.blueprint.content
   const folder = folderOf(content, node.id)
   const workItem = workItemOf(entry.job, node.id)
   const worktree =
     folder && workItem ? (entry.worktrees.get(worktreeKey(folder, workItem)) ?? null) : null
+  const current: string[] = []
+  try {
+    if (worktree) current.push(describeSync(worktree, await syncForStep(entry, step, worktree)))
+    // Loaded at the start already; later agents get what is there now.
+    if (workItem?.kind === 'pullRequest' && step.dependsOn.length > 0) {
+      const fresh = await getPullRequestContent(workItem.repository, workItem.number).catch(
+        () => null,
+      )
+      if (fresh) entry.workItemContent.set(workItem.id, { kind: 'pullRequest', content: fresh })
+    } else if (workItem?.kind === 'issue' && worktree) {
+      const number = await findPullRequestForBranch(workItem.repository, worktree.headBranch)
+      if (number !== null) {
+        const pr = await getPullRequestContent(workItem.repository, number).catch(() => null)
+        current.push(describeThreadsNow(number, pr))
+      }
+    }
+  } catch (error) {
+    console.error(`Could not prepare agent ${step.id}`, error)
+  }
+  // The run may have been stopped meanwhile; then no process is started.
+  if (entry.stopping || active.get(entry.job.id) !== entry) {
+    agentFinished(entry, step, { stopped: true })
+    return
+  }
+
+  // Another agent may have begun syncing the worktree meanwhile; its files settle first.
+  if (worktree) await syncs.get(worktree.root)?.catch(() => null)
+
   const base = {
     folder,
     worktree: worktree?.path ?? null,
@@ -933,14 +1127,9 @@ function startAgent(entry: ActiveRun, step: RunPlanStep): void {
   const loaded = workItem ? (entry.workItemContent.get(workItem.id) ?? null) : null
   const input: AgentRunInput = {
     ...base,
-    prompt: buildPrompt(node.config, base, loaded, worktree, loopInfo(entry, step)),
+    prompt: buildPrompt(node.config, base, loaded, worktree, loopInfo(entry, step), current),
   }
-  updateAgent(entry, step.id, {
-    status: 'running',
-    startedAt: new Date().toISOString(),
-    input,
-  })
-  activity(entry, 'agentStarted', step.id)
+  updateAgent(entry, step.id, { input })
   runProcess(entry, step, node.config, input, worktree)
 }
 

@@ -121,7 +121,10 @@ export interface PullRequestWorktree {
   pullRequest: number
   /** The branch to push to: the pull request's head branch, or for an issue the new branch. */
   headBranch: string
-  /** For an issue: the branch the new branch starts from, and a pull request goes into. */
+  /**
+   * The branch a pull request goes into: for a pull request its base, for an issue the branch
+   * the new branch starts from. Agents may fetch it, e.g. to diff against it.
+   */
   baseBranch: string | null
   /**
    * Where to push: a remote name whose branch the local branch tracks, so `git push` works,
@@ -210,7 +213,7 @@ export async function createPullRequestWorktree(
     remote,
     pullRequest: number,
     headBranch,
-    baseBranch: null,
+    baseBranch: isSafeRef(content.baseBranch) ? content.baseBranch : null,
     pushTarget: fork && headRepository ? `https://github.com/${headRepository}.git` : remote,
     canPush: !fork || (content.maintainerCanModify && headRepository !== null),
     tracksHead: !fork,
@@ -573,5 +576,114 @@ export async function removePullRequestWorktree(
     return 'removeFailed'
   } finally {
     worktreesInUse.delete(key)
+  }
+}
+
+/** The commit the worktree is at, or an empty string if it cannot be read. */
+export async function worktreeHead(worktree: PullRequestWorktree): Promise<string> {
+  return (await git(worktree.root, ['rev-parse', 'HEAD']).catch(() => '')).trim()
+}
+
+/** Where a worktree stands against its branch on GitHub, after `syncWorktree`. */
+export type WorktreeSync =
+  /** Up to date with the branch on GitHub. */
+  | { state: 'current'; head: string }
+  /** Moved forward to the branch on GitHub: `commits` new ones from others. */
+  | { state: 'updated'; head: string; commits: number }
+  /** Its own commits put on top of new ones on GitHub; they still need to be pushed. */
+  | { state: 'rebased'; head: string; ahead: number; behind: number }
+  /** Has `ahead` commits that are not on GitHub yet, and GitHub has nothing new. */
+  | { state: 'ahead'; head: string; ahead: number }
+  /** Behind GitHub, but left as it is: uncommitted changes, or its commits did not fit on top. */
+  | {
+      state: 'behind'
+      head: string
+      ahead: number
+      behind: number
+      reason: 'uncommittedChanges' | 'conflict'
+    }
+  /** The branch is not on GitHub yet, e.g. a new issue branch. */
+  | { state: 'notOnRemote'; head: string }
+  /** Another agent of the run works in the worktree right now, so it was not touched. */
+  | { state: 'busy'; head: string }
+  /** GitHub could not be reached, or git failed. */
+  | { state: 'failed'; message: string }
+
+/**
+ * Brings the worktree up to date before an agent starts in it: checks out its branch again if
+ * an agent switched away, fetches the head and base branch, and moves the branch to what is
+ * on GitHub. Its own commits are put on top of new ones (a rebase that is aborted if anything
+ * conflicts); uncommitted changes are never touched. Nothing is pushed.
+ */
+export async function syncWorktree(worktree: PullRequestWorktree): Promise<WorktreeSync> {
+  const root = worktree.root
+  const head = async () => (await git(root, ['rev-parse', 'HEAD'])).trim()
+  try {
+    const dirty = (await git(root, ['status', '--porcelain'])).trim() !== ''
+    const current = (
+      await git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']).catch(() => '')
+    ).trim()
+    if (current !== worktree.branch && !dirty) {
+      await git(root, ['switch', '--no-guess', worktree.branch])
+    }
+
+    if (worktree.baseBranch) {
+      const base = worktree.baseBranch
+      await git(root, [
+        'fetch',
+        '--no-tags',
+        worktree.remote,
+        `+refs/heads/${base}:refs/remotes/${worktree.remote}/${base}`,
+      ]).catch(() => '')
+    }
+
+    let remoteRef: string
+    if (worktree.kind === 'pullRequest' && !worktree.tracksHead) {
+      // A fork's branch, read through the pull request's ref.
+      await git(root, [
+        'fetch',
+        '--no-tags',
+        worktree.remote,
+        `refs/pull/${worktree.pullRequest}/head`,
+      ])
+      remoteRef = (await git(root, ['rev-parse', 'FETCH_HEAD'])).trim()
+    } else {
+      const branch = worktree.headBranch
+      const listed = await git(root, ['ls-remote', '--heads', worktree.remote, branch])
+      if (!listed.trim()) return { state: 'notOnRemote', head: await head() }
+      await git(root, [
+        'fetch',
+        '--no-tags',
+        worktree.remote,
+        `+refs/heads/${branch}:refs/remotes/${worktree.remote}/${branch}`,
+      ])
+      remoteRef = `refs/remotes/${worktree.remote}/${branch}`
+    }
+
+    const counts = (
+      await git(root, ['rev-list', '--left-right', '--count', `HEAD...${remoteRef}`])
+    ).trim()
+    const [ahead = 0, behind = 0] = counts.split(/\s+/).map(Number)
+    if (behind === 0) {
+      return ahead === 0
+        ? { state: 'current', head: await head() }
+        : { state: 'ahead', head: await head(), ahead }
+    }
+    if (dirty) {
+      return { state: 'behind', head: await head(), ahead, behind, reason: 'uncommittedChanges' }
+    }
+    if (ahead === 0) {
+      await git(root, ['merge', '--ff-only', remoteRef])
+      return { state: 'updated', head: await head(), commits: behind }
+    }
+    try {
+      await git(root, ['rebase', remoteRef])
+      return { state: 'rebased', head: await head(), ahead, behind }
+    } catch {
+      await git(root, ['rebase', '--abort']).catch(() => '')
+      return { state: 'behind', head: await head(), ahead, behind, reason: 'conflict' }
+    }
+  } catch (error) {
+    return { state: 'failed', message: error instanceof Error ? error.message : String(error) }
   }
 }

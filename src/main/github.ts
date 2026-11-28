@@ -686,3 +686,28 @@ export async function getPullRequestContent(
     totalThreads: pr.reviewThreads?.totalCount ?? threads.length,
   }
 }
+
+/** The number of the open pull request whose head is `branch`, or `null` if there is none. */
+export async function findPullRequestForBranch(
+  repository: string,
+  branch: string,
+): Promise<number | null> {
+  const [owner = '', name = ''] = repository.split('/')
+  if (!namePattern.test(owner) || !namePattern.test(name) || branch.startsWith('-')) return null
+  const raw = await runGhJson<{ number?: number }[]>([
+    'pr',
+    'list',
+    '--repo',
+    repository,
+    '--head',
+    branch,
+    '--state',
+    'open',
+    '--limit',
+    '1',
+    '--json',
+    'number',
+  ])
+  const number = raw[0]?.number
+  return typeof number === 'number' ? number : null
+}

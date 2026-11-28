@@ -80,7 +80,7 @@ export interface GitTarget {
   headBranch: string
   /** Where to push: the remote, or a fork's URL. */
   pushTarget: string
-  /** For an issue: the branch a pull request goes into. */
+  /** The branch a pull request goes into; it may be fetched. */
   baseBranch: string | null
 }
 
