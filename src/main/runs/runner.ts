@@ -531,6 +531,8 @@ async function checkRequirements(job: Job): Promise<StartProblem[]> {
     const item = workItemOf(job, agent.id)
     if (folderNode?.type !== 'folder' || !folderNode.config.path) continue
     if (!item || checked.has(folderNode.id)) continue
+    // Only a worktree needs a git repository; issues can be worked on in the folder itself.
+    if (item.kind === 'issue' && folderNode.config.workMode === 'direct') continue
     checked.add(folderNode.id)
     const path = folderNode.config.path
     if (!(await folderExists(path))) continue
@@ -676,6 +678,7 @@ async function createWorktrees(
     const loaded = workItemContent.get(item.id)
     try {
       if (item.kind === 'issue') {
+        if (folderNode.config.workMode === 'direct') continue
         worktrees.set(
           key,
           await createIssueWorktree(path, item.repository, item.number, item.title),

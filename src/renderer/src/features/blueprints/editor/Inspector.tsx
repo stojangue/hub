@@ -13,7 +13,6 @@ import {
 import {
   describeUnsupportedNode,
   maxNameLength,
-  repeatedNodes,
   type BlueprintConnection,
   type BlueprintContent,
   type BlueprintNode,
@@ -49,8 +48,6 @@ interface InspectorProps {
    * from, so permissions to work in it matter.
    */
   folderConnected: boolean
-  /** For agent nodes: the folder and work item taken over from earlier agents, by name. */
-  inherited?: { folder: string | null; workItem: string | null }
   /** Shows the settings without letting them be changed. */
   readOnly?: boolean
 }
@@ -64,7 +61,6 @@ export function Inspector({
   folderExists,
   cliAvailable,
   folderConnected,
-  inherited,
   readOnly = false,
 }: InspectorProps) {
   const t = useT()
@@ -111,13 +107,16 @@ export function Inspector({
                    */}
                   <div
                     title={node.config.path ?? undefined}
-                    dir={node.config.path ? 'rtl' : undefined}
                     className={cn(
                       'flex h-8 min-w-0 flex-1 items-center rounded-md border border-border bg-surface px-2.5 text-xs select-text',
                       node.config.path ? 'font-mono' : 'text-muted',
                     )}
                   >
-                    <span className="min-w-0 truncate">
+                    {/* Right to left only for cutting off; aligned left like other inputs. */}
+                    <span
+                      dir={node.config.path ? 'rtl' : undefined}
+                      className="block min-w-0 flex-1 truncate text-left"
+                    >
                       {node.config.path ? (
                         <bdi dir="ltr">{node.config.path}</bdi>
                       ) : (
@@ -136,7 +135,7 @@ export function Inspector({
                     }
                     onClick={() => {
                       void api.folders.pick(node.config.path ?? undefined).then((path) => {
-                        if (path) onChange({ ...node, config: { path } })
+                        if (path) onChange({ ...node, config: { ...node.config, path } })
                       })
                     }}
                   >
@@ -151,23 +150,37 @@ export function Inspector({
           </InspectorField>
         )}
 
+        {node.type === 'folder' && (
+          <InspectorField label={t('inspector.folder.workMode')}>
+            {(id) => (
+              <Select
+                id={id}
+                value={node.config.workMode}
+                onChange={(mode) =>
+                  onChange({
+                    ...node,
+                    config: {
+                      ...node.config,
+                      workMode: mode === 'direct' ? 'direct' : 'worktree',
+                    },
+                  })
+                }
+                placeholder={t('inspector.folder.workMode')}
+                options={[
+                  { value: 'worktree', label: t('inspector.folder.workMode.worktree') },
+                  { value: 'direct', label: t('inspector.folder.workMode.direct') },
+                ]}
+              />
+            )}
+          </InspectorField>
+        )}
+
         {node.type === 'agent' && (
           <>
             {cliAvailable === false && (
               <Note tone="warning">{t('inspector.agent.cliMissing')}</Note>
             )}
-            {(inherited?.folder || inherited?.workItem) && (
-              <Note>
-                {[
-                  inherited.folder &&
-                    t('inspector.agent.inheritsFolder', { name: inherited.folder }),
-                  inherited.workItem &&
-                    t('inspector.agent.inheritsWorkItem', { name: inherited.workItem }),
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              </Note>
-            )}
+
             <InspectorField label={t('inspector.agent.instructions')}>
               {(id) => (
                 <textarea
@@ -260,7 +273,6 @@ export function Inspector({
         )}
         {node.type === 'switch' && (
           <>
-            <Note>{t('inspector.switch.help')}</Note>
             <SwitchOutputs
               outputs={node.config.outputs}
               onChange={(outputs) => onChange({ ...node, config: { ...node.config, outputs } })}
@@ -489,9 +501,6 @@ export function RepeatInspector({
 }: RepeatInspectorProps) {
   const t = useT()
   const name = (id: string) => content.nodes.find((node) => node.id === id)?.name ?? id
-  const repeated = repeatedNodes(content, connection)
-    .map(name)
-    .sort((a, b) => a.localeCompare(b))
   const rounds = connection.repeat?.maxRounds ?? 2
   const [draft, setDraft] = useState(String(rounds))
   return (
@@ -531,13 +540,6 @@ export function RepeatInspector({
             />
           )}
         </InspectorField>
-        <Note>
-          {t('inspector.repeat.help', {
-            nodes: repeated.join(', '),
-            from: name(connection.from.nodeId),
-            to: name(connection.to.nodeId),
-          })}
-        </Note>
       </fieldset>
     </aside>
   )

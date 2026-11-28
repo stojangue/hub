@@ -246,8 +246,9 @@ export const en = {
   'inspector.folder.choose': 'Choose folder…',
   'inspector.folder.change': 'Change folder…',
   'inspector.folder.missing': 'This folder no longer exists. Choose another one.',
-  'inspector.agent.inheritsFolder': 'Uses the folder “{name}” of the agent before it.',
-  'inspector.agent.inheritsWorkItem': 'Uses the work item “{name}” of the agent before it.',
+  'inspector.folder.workMode': 'Work mode',
+  'inspector.folder.workMode.worktree': 'Own worktree per job',
+  'inspector.folder.workMode.direct': 'In the folder itself',
   'inspector.agent.cliMissing':
     'The Claude Code CLI is not available. You can edit this agent, but jobs with it cannot start.',
   'inspector.agent.instructions': 'Instructions',
@@ -364,8 +365,6 @@ export const en = {
   'switch.defaultYes': 'Yes',
   'switch.defaultNo': 'No',
   'canvas.repeat': '↻ up to {rounds} rounds',
-  'inspector.switch.help':
-    'A short Claude call reads the result that comes in and picks the output whose condition fits. The result is passed on unchanged; agents at the other outputs do not run.',
   'inspector.switch.outputs': 'Outputs',
   'inspector.switch.outputName': 'Name',
   'inspector.switch.conditionPlaceholder':
@@ -383,8 +382,6 @@ export const en = {
   'inspector.switch.newOutput': 'Output {number}',
   'inspector.repeat.label': 'Repeat',
   'inspector.repeat.maxRounds': 'Most rounds',
-  'inspector.repeat.help':
-    'After “{from}”, “{to}” runs again with its result, and so do the agents in between ({nodes}), up to the most rounds. A switch on the way ends the repeat when it picks another way.',
   'run.switch.chosen': 'Picked',
   'start.switchWithoutInput': 'Switch “{name}” has no result to judge. Link an agent to it.',
   'library.limitReached': 'A blueprint can have only one {block}.',

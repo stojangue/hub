@@ -71,19 +71,6 @@ function summarize(
   }
 }
 
-/** Names of the folder and work item an agent takes over from earlier agents, if any. */
-function inheritedSources(
-  content: BlueprintContent,
-  node: BlueprintNode,
-): { folder: string | null; workItem: string | null } {
-  if (node.type !== 'agent') return { folder: null, workItem: null }
-  const name = (port: 'folder' | 'workItem') => {
-    if (content.connections.some((c) => c.to.nodeId === node.id && c.to.port === port)) return null
-    return effectiveSource(content, node.id, port)?.name ?? null
-  }
-  return { folder: name('folder'), workItem: name('workItem') }
-}
-
 /** The blueprint editor: library on the left, canvas in the middle, inspector on the right. */
 export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
   const t = useT()
@@ -399,7 +386,6 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
           }
           cliAvailable={cliAvailable}
           folderConnected={effectiveSource(content, selectedNode.id, 'folder') !== undefined}
-          inherited={inheritedSources(content, selectedNode)}
           readOnly={readOnly}
         />
       )}

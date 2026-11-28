@@ -254,9 +254,9 @@ export const de: Translations = {
   'inspector.folder.choose': 'Ordner wählen …',
   'inspector.folder.change': 'Ordner ändern …',
   'inspector.folder.missing': 'Diesen Ordner gibt es nicht mehr. Wähle einen anderen.',
-  'inspector.agent.inheritsFolder': 'Verwendet den Ordner „{name}“ des vorherigen Agenten.',
-  'inspector.agent.inheritsWorkItem':
-    'Verwendet das Arbeitselement „{name}“ des vorherigen Agenten.',
+  'inspector.folder.workMode': 'Arbeitsweise',
+  'inspector.folder.workMode.worktree': 'Eigener Worktree pro Auftrag',
+  'inspector.folder.workMode.direct': 'Direkt im Ordner',
   'inspector.agent.cliMissing':
     'Die Claude Code CLI ist nicht verfügbar. Du kannst diesen Agenten bearbeiten, aber Aufträge mit ihm können nicht starten.',
   'inspector.agent.instructions': 'Anweisungen',
@@ -377,8 +377,6 @@ export const de: Translations = {
   'switch.defaultYes': 'Ja',
   'switch.defaultNo': 'Nein',
   'canvas.repeat': '↻ bis zu {rounds} Runden',
-  'inspector.switch.help':
-    'Ein kurzer Claude-Aufruf liest das eingehende Ergebnis und wählt den Ausgang, dessen Bedingung passt. Das Ergebnis wird unverändert weitergegeben; Agenten an den anderen Ausgängen laufen nicht.',
   'inspector.switch.outputs': 'Ausgänge',
   'inspector.switch.outputName': 'Name',
   'inspector.switch.conditionPlaceholder':
@@ -397,8 +395,6 @@ export const de: Translations = {
   'inspector.switch.newOutput': 'Ausgang {number}',
   'inspector.repeat.label': 'Wiederholung',
   'inspector.repeat.maxRounds': 'Höchstens Runden',
-  'inspector.repeat.help':
-    'Nach „{from}“ läuft „{to}“ mit dessen Ergebnis erneut, ebenso die Agenten dazwischen ({nodes}), bis zur höchsten Rundenzahl. Eine Weiche auf dem Weg beendet die Wiederholung, wenn sie einen anderen Weg wählt.',
   'run.switch.chosen': 'Gewählt',
   'start.switchWithoutInput':
     'Die Weiche „{name}“ hat kein Ergebnis zum Beurteilen. Verbinde einen Agenten mit ihr.',

@@ -30,9 +30,19 @@ export function isBlockType(value: unknown): value is BlockType {
 
 // --- Block settings ---------------------------------------------------------------------
 
+/**
+ * How agents work in a folder on an issue or pull request. `worktree`: in a git worktree of
+ * its repository, on the branch of the pull request or one named after the issue, so the
+ * folder itself stays untouched. `direct`: in the folder itself (issues only; pull requests
+ * always get a worktree).
+ */
+export const folderWorkModes = ['worktree', 'direct'] as const
+export type FolderWorkMode = (typeof folderWorkModes)[number]
+
 export interface FolderConfig {
   /** Absolute path of a local folder, or `null` while none is picked. */
   path: string | null
+  workMode: FolderWorkMode
 }
 
 /** A work item node is a named placeholder; the job provides the actual work item. */
@@ -129,10 +139,15 @@ export const blockDefinitions: { [T in BlockType]: BlockDefinition<T> } = {
     inputs: [],
     outputs: [{ id: 'folder', dataType: 'folder' }],
     runs: false,
-    defaultConfig: () => ({ path: null }),
+    defaultConfig: () => ({ path: null, workMode: 'worktree' }),
     sanitizeConfig: (value) => {
-      const path = asRecord(value)?.['path']
-      return { path: typeof path === 'string' && path.trim() ? path : null }
+      const input = asRecord(value)
+      const path = input?.['path']
+      return {
+        path: typeof path === 'string' && path.trim() ? path : null,
+        // Folders stored before the setting existed use a worktree, the safe choice.
+        workMode: input?.['workMode'] === 'direct' ? 'direct' : 'worktree',
+      }
     },
   },
   workItem: {
