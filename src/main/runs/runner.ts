@@ -44,6 +44,8 @@ import { deleteRun, readRun, writeRun, writeRunSync } from './store'
 const SAVE_INTERVAL_MS = 1000
 /** How long a stopped process gets to exit before it is killed. */
 const KILL_GRACE_MS = 5000
+/** Extra time a deleted job's run gets to end after its processes were killed. */
+const DELETE_WAIT_EXTRA_MS = 2000
 const maxStderrLength = 4000
 
 interface ActiveRun {
@@ -52,6 +54,11 @@ interface ActiveRun {
   processes: Map<string, ChildProcess>
   stopping: boolean
   saveTimer: NodeJS.Timeout | null
+  /** Set when the job is deleted while the run is still ending; nothing is saved afterwards. */
+  deleted: boolean
+  /** Resolves once `finish` has saved the run and removed it from `active`. */
+  finished: Promise<void>
+  resolveFinished: () => void
   /** Content of each work item by its ID, loaded once when the run starts; `null` if that failed. */
   workItemContent: Map<string, IssueContent | null>
 }
@@ -76,6 +83,7 @@ function scheduleSave(entry: ActiveRun): void {
   if (entry.saveTimer) return
   entry.saveTimer = setTimeout(() => {
     entry.saveTimer = null
+    if (entry.deleted) return
     writeRun(entry.run).catch((error: unknown) => console.error('Failed to save run', error))
   }, SAVE_INTERVAL_MS)
 }
@@ -243,12 +251,19 @@ export async function startJob(jobId: unknown): Promise<StartRunResult> {
     job.blueprint.content.nodes,
     now,
   )
+  let resolveFinished = (): void => {}
+  const finished = new Promise<void>((resolve) => {
+    resolveFinished = resolve
+  })
   const entry: ActiveRun = {
     run,
     job,
     processes: new Map(),
     stopping: false,
     saveTimer: null,
+    deleted: false,
+    finished,
+    resolveFinished,
     workItemContent,
   }
   active.set(job.id, entry)
@@ -535,10 +550,14 @@ async function finish(entry: ActiveRun, status: JobRunStatus): Promise<void> {
   if (entry.saveTimer) clearTimeout(entry.saveTimer)
   entry.saveTimer = null
   try {
-    await writeRun(entry.run)
-    await setLastRun(entry.job.id, summarizeRun(entry.run))
+    if (!entry.deleted) {
+      await writeRun(entry.run)
+      await setLastRun(entry.job.id, summarizeRun(entry.run))
+    }
   } catch (error) {
     console.error('Failed to save run', error)
+  } finally {
+    entry.resolveFinished()
   }
 }
 
@@ -576,7 +595,25 @@ export async function getRun(jobId: unknown): Promise<JobRun | null> {
 }
 
 export async function deleteJobRun(jobId: string): Promise<void> {
-  await stopJob(jobId)
+  const entry = active.get(jobId)
+  if (entry) {
+    // Stopping only signals the processes; the run is saved once they have exited.
+    // Wait for that (they are killed after the grace period), so the file is not written
+    // again after it was deleted. `stopJob` does nothing if the run is already stopping.
+    await stopJob(jobId)
+    let timeout: NodeJS.Timeout | undefined
+    await Promise.race([
+      entry.finished,
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, KILL_GRACE_MS + DELETE_WAIT_EXTRA_MS)
+      }),
+    ])
+    clearTimeout(timeout)
+    // If a process still has not exited, make sure nothing is saved for this run anymore.
+    entry.deleted = true
+    if (entry.saveTimer) clearTimeout(entry.saveTimer)
+    entry.saveTimer = null
+  }
   await deleteRun(jobId)
 }
 
