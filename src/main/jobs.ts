@@ -54,8 +54,14 @@ export async function createJob(input: unknown): Promise<Job> {
   })
 }
 
-export function setLastRun(id: string, lastRun: JobRunSummary): Promise<Job | null> {
-  return store.update(id, (job) => ({ ...job, lastRun }))
+/**
+ * Records the latest run. A job saved by a newer version is left as it is: writing it would
+ * replace its file with what this version understood of it.
+ */
+export async function setLastRun(id: string, lastRun: JobRunSummary): Promise<Job | null> {
+  const job = await store.get(id)
+  if (!job || isNewerFormat(job.formatVersion)) return job
+  return store.update(id, (current) => ({ ...current, lastRun }))
 }
 
 export function deleteJob(id: unknown): Promise<void> {

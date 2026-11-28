@@ -634,6 +634,8 @@ function interrupt(run: JobRun, at: string): JobRun {
 export async function recoverInterruptedRuns(): Promise<void> {
   for (const job of await listJobs()) {
     if (job.lastRun?.status !== 'running' || active.has(job.id)) continue
+    // Its job and run files belong to a newer version, which recovers them itself.
+    if (isNewerFormat(job.formatVersion)) continue
     const at = new Date().toISOString()
     const stored = await readRun(job.id)
     const run = stored ? interrupt(stored, at) : null
