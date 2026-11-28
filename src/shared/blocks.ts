@@ -17,9 +17,11 @@ export interface PortDefinition {
   dataType: DataType
   /** Inputs only: whether more than one connection may end here. */
   multiple?: boolean
+  /** Shown instead of the data type, e.g. the name of a switch's output. */
+  label?: string
 }
 
-export const blockTypes = ['folder', 'workItem', 'agent'] as const
+export const blockTypes = ['folder', 'workItem', 'agent', 'switch'] as const
 export type BlockType = (typeof blockTypes)[number]
 
 export function isBlockType(value: unknown): value is BlockType {
@@ -28,9 +30,19 @@ export function isBlockType(value: unknown): value is BlockType {
 
 // --- Block settings ---------------------------------------------------------------------
 
+/**
+ * How agents work in a folder on an issue or pull request. `worktree`: in a git worktree of
+ * its repository, on the branch of the pull request or one named after the issue, so the
+ * folder itself stays untouched. `direct`: in the folder itself (issues only; pull requests
+ * always get a worktree).
+ */
+export const folderWorkModes = ['worktree', 'direct'] as const
+export type FolderWorkMode = (typeof folderWorkModes)[number]
+
 export interface FolderConfig {
   /** Absolute path of a local folder, or `null` while none is picked. */
   path: string | null
+  workMode: FolderWorkMode
 }
 
 /** A work item node is a named placeholder; the job provides the actual work item. */
@@ -68,10 +80,40 @@ export interface AgentConfig {
   devops: AgentDevOpsAccess
 }
 
+/** Most outputs a switch may have. */
+export const maxSwitchOutputs = 8
+/** Longest accepted output name and condition, in characters. */
+export const maxOutputNameLength = 60
+export const maxConditionLength = 2000
+
+export interface SwitchOutput {
+  /** Stable port ID, kept when the output is renamed. */
+  id: string
+  name: string
+  /** When this way is taken, in words. */
+  condition: string
+}
+
+/**
+ * A switch reads the result of the agent before it and picks one of its outputs, by their
+ * conditions. It passes that result on unchanged; the agents at the other outputs do not run.
+ * It decides with a short Claude call of its own, so the agents' prompts stay as written.
+ */
+export interface SwitchConfig {
+  outputs: SwitchOutput[]
+  model: AgentModel
+  /** `read` lets it look things up on GitHub, e.g. whether review threads are still open. */
+  devops: 'none' | 'read'
+}
+
+/** Most rounds a repeat connection may run its part of the blueprint. */
+export const maxRepeatRounds = 20
+
 export interface BlockConfigs {
   folder: FolderConfig
   workItem: WorkItemConfig
   agent: AgentConfig
+  switch: SwitchConfig
 }
 
 // --- Definitions ------------------------------------------------------------------------
@@ -97,10 +139,15 @@ export const blockDefinitions: { [T in BlockType]: BlockDefinition<T> } = {
     inputs: [],
     outputs: [{ id: 'folder', dataType: 'folder' }],
     runs: false,
-    defaultConfig: () => ({ path: null }),
+    defaultConfig: () => ({ path: null, workMode: 'worktree' }),
     sanitizeConfig: (value) => {
-      const path = asRecord(value)?.['path']
-      return { path: typeof path === 'string' && path.trim() ? path : null }
+      const input = asRecord(value)
+      const path = input?.['path']
+      return {
+        path: typeof path === 'string' && path.trim() ? path : null,
+        // Folders stored before the setting existed use a worktree, the safe choice.
+        workMode: input?.['workMode'] === 'direct' ? 'direct' : 'worktree',
+      }
     },
   },
   workItem: {
@@ -139,6 +186,56 @@ export const blockDefinitions: { [T in BlockType]: BlockDefinition<T> } = {
           ? input['permissionMode']
           : 'acceptEdits',
         devops: isOneOf(agentDevOpsAccess, input['devops']) ? input['devops'] : 'read',
+      }
+    },
+  },
+  switch: {
+    inputs: [{ id: 'result', dataType: 'result' }],
+    // Its outputs are its configured ones, see `nodePorts` in `blueprints.ts`.
+    outputs: [],
+    runs: true,
+    defaultConfig: () => ({
+      outputs: [
+        { id: 'yes', name: 'Yes', condition: '' },
+        { id: 'no', name: 'No', condition: '' },
+      ],
+      model: 'haiku',
+      devops: 'none',
+    }),
+    sanitizeConfig: (value) => {
+      const input = asRecord(value) ?? {}
+      const ids = new Set<string>()
+      const outputs = (Array.isArray(input['outputs']) ? input['outputs'] : []).flatMap(
+        (raw: unknown) => {
+          const output = asRecord(raw)
+          const id = output?.['id']
+          const name = output?.['name']
+          const condition = output?.['condition']
+          if (
+            typeof id !== 'string' ||
+            !/^[A-Za-z0-9_-]{1,40}$/.test(id) ||
+            ids.has(id) ||
+            typeof name !== 'string' ||
+            !name.trim() ||
+            ids.size >= maxSwitchOutputs
+          ) {
+            return []
+          }
+          ids.add(id)
+          return [
+            {
+              id,
+              name: name.slice(0, maxOutputNameLength),
+              condition:
+                typeof condition === 'string' ? condition.slice(0, maxConditionLength) : '',
+            },
+          ]
+        },
+      )
+      return {
+        outputs: outputs.length > 0 ? outputs : blockDefinitions.switch.defaultConfig().outputs,
+        model: isOneOf(agentModels, input['model']) ? input['model'] : 'haiku',
+        devops: input['devops'] === 'read' ? 'read' : 'none',
       }
     },
   },

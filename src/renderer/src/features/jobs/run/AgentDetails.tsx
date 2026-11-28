@@ -3,11 +3,14 @@ import {
   Bot,
   ChevronRight,
   CircleCheck,
+  CircleStop,
   CircleX,
   FilePen,
   FilePlus,
   FileText,
   Folder,
+  GitBranch,
+  Split,
   Globe,
   ListTodo,
   LoaderCircle,
@@ -19,13 +22,13 @@ import {
 } from 'lucide-react'
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentPermissionMode } from '@shared/blocks'
-import { incoming, sourceOf, type BlueprintNode } from '@shared/blueprints'
+import { effectiveSource, incoming, type BlueprintNode } from '@shared/blueprints'
 import type { Job } from '@shared/jobs'
 import type { AgentEntry, AgentRun } from '@shared/runs'
 import { useT, type TranslationKey } from '@renderer/i18n'
 import { devOpsLabel, effortLabel, modelLabel } from '@renderer/claude/agent-options'
 import { cn } from '@renderer/lib/cn'
-import { durationBetween } from './format'
+import { durationBetween, formatDuration } from './format'
 import { agentStatusStyles } from './status-styles'
 import { StatusBadge } from './status'
 
@@ -36,8 +39,8 @@ const permissionKeys: Record<AgentPermissionMode, TranslationKey> = {
 }
 
 interface AgentDetailsProps {
-  /** The agent node from the job's snapshot. */
-  node: Extract<BlueprintNode, { type: 'agent' }>
+  /** The agent or switch node from the job's snapshot. */
+  node: Extract<BlueprintNode, { type: 'agent' | 'switch' }>
   job: Job
   /** Its part of the latest run; missing before the first run. */
   agentRun: AgentRun | undefined
@@ -61,10 +64,21 @@ export function AgentDetails({ node, job, agentRun, names, now }: AgentDetailsPr
       className="min-w-0 overflow-hidden rounded-xl border border-border bg-background"
     >
       <header className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-port-result/15 text-port-result">
-          <Bot aria-hidden className="size-4" />
-        </span>
+        {node.type === 'switch' ? (
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-accent/15 text-accent">
+            <Split aria-hidden className="size-4" />
+          </span>
+        ) : (
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-port-result/15 text-port-result">
+            <Bot aria-hidden className="size-4" />
+          </span>
+        )}
         <h2 className="min-w-0 flex-1 truncate font-semibold">{node.name}</h2>
+        {agentRun && agentRun.round > 1 && (
+          <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+            {t('run.round', { round: agentRun.round })}
+          </span>
+        )}
         {duration && <span className="text-xs text-muted tabular-nums">{duration}</span>}
         {agentRun && <StatusBadge style={agentStatusStyles[agentRun.status]} />}
       </header>
@@ -73,6 +87,15 @@ export function AgentDetails({ node, job, agentRun, names, now }: AgentDetailsPr
         {agentRun?.error && (
           <div className="p-4">
             <ErrorCard text={agentRun.error} />
+          </div>
+        )}
+        {node.type === 'switch' && agentRun?.chosenOutput && (
+          <div className="flex items-center gap-2 px-4 py-3 text-[0.8125rem]">
+            <span className="text-muted">{t('run.switch.chosen')}</span>
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 font-medium text-accent">
+              {node.config.outputs.find((output) => output.id === agentRun.chosenOutput)?.name ??
+                agentRun.chosenOutput}
+            </span>
           </div>
         )}
         {agentRun?.result && !agentRun.error && (
@@ -92,11 +115,15 @@ export function AgentDetails({ node, job, agentRun, names, now }: AgentDetailsPr
             count={agentRun.entries.length}
             defaultOpen={running || !agentRun.result}
           >
-            <OutputView agent={agentRun} />
+            <OutputView agent={agentRun} now={now} />
           </Section>
         )}
         <Section title={t('agent.configuration')} defaultOpen={!started}>
-          <Configuration node={node} job={job} agentRun={agentRun} names={names} />
+          {node.type === 'switch' ? (
+            <SwitchConfiguration node={node} agentRun={agentRun} />
+          ) : (
+            <Configuration node={node} job={job} agentRun={agentRun} names={names} />
+          )}
         </Section>
       </div>
     </section>
@@ -139,7 +166,7 @@ function Section({
 
 // --- Live output ------------------------------------------------------------------------
 
-function OutputView({ agent }: { agent: AgentRun }) {
+function OutputView({ agent, now }: { agent: AgentRun; now: number }) {
   const t = useT()
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
@@ -169,20 +196,50 @@ function OutputView({ agent }: { agent: AgentRun }) {
         </Placeholder>
       ) : (
         agent.entries.map((entry) => (
-          <EntryView key={entry.id} entry={entry} folder={agent.input?.folder ?? null} />
+          <EntryView key={entry.id} entry={entry} folder={agent.input?.folder ?? null} now={now} />
         ))
       )}
       {agent.status === 'running' && agent.entries.length > 0 && (
-        <div className="flex items-center gap-2 px-1 text-xs text-muted">
-          <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
-          {t('agent.working')}
-        </div>
+        <WorkingLine agent={agent} now={now} />
       )}
     </div>
   )
 }
 
-function EntryView({ entry, folder }: { entry: AgentEntry; folder: string | null }) {
+/**
+ * What a running agent is doing: how many subagents work in the background, and how long ago
+ * it last printed anything, so a long wait for them does not look like a hang.
+ */
+function WorkingLine({ agent, now }: { agent: AgentRun; now: number }) {
+  const t = useT()
+  const background = agent.entries.filter(
+    (entry) => entry.kind === 'tool' && entry.background?.status === 'running',
+  ).length
+  const last = agent.lastActivityAt ?? agent.entries.at(-1)?.at ?? null
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-muted">
+      <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+      <span>
+        {background > 0 ? t('agent.backgroundWorking', { count: background }) : t('agent.working')}
+      </span>
+      {last && (
+        <span className="tabular-nums">
+          · {t('agent.lastActivity', { time: formatDuration(now - Date.parse(last)) })}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function EntryView({
+  entry,
+  folder,
+  now,
+}: {
+  entry: AgentEntry
+  folder: string | null
+  now: number
+}) {
   if (entry.kind === 'text') {
     return (
       <div className="rounded-lg bg-surface px-3 py-2">
@@ -191,7 +248,7 @@ function EntryView({ entry, folder }: { entry: AgentEntry; folder: string | null
     )
   }
   if (entry.kind === 'error') return <ErrorCard text={entry.text} />
-  return <ToolCard entry={entry} folder={folder} />
+  return <ToolCard entry={entry} folder={folder} now={now} />
 }
 
 interface ToolKind {
@@ -259,9 +316,11 @@ function toolSummary(name: string, input: unknown, folder: string | null): strin
 function ToolCard({
   entry,
   folder,
+  now,
 }: {
   entry: Extract<AgentEntry, { kind: 'tool' }>
   folder: string | null
+  now: number
 }) {
   const t = useT()
   const [open, setOpen] = useState(false)
@@ -269,10 +328,13 @@ function ToolCard({
   const Icon = kind?.icon ?? Wrench
   const label = kind ? t(kind.labelKey) : entry.name
   const summary = toolSummary(entry.name, entry.input, folder)
-  const done = entry.output !== undefined
+  const background = entry.background
+  // A background subagent's call returns at once; it is done when the subagent is.
+  const done = entry.output !== undefined && background?.status !== 'running'
+  const failed = entry.isError === true || background?.status === 'failed'
 
   return (
-    <div className={cn('rounded-lg border', entry.isError ? 'border-danger/30' : 'border-border')}>
+    <div className={cn('rounded-lg border', failed ? 'border-danger/30' : 'border-border')}>
       <button
         type="button"
         aria-expanded={open}
@@ -288,17 +350,38 @@ function ToolCard({
         <span title={summary} className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
           {summary}
         </span>
+        {background && (
+          <span className="shrink-0 rounded-full bg-border/70 px-1.5 text-[0.6875rem] leading-5 text-muted">
+            {t('tools.background')}
+          </span>
+        )}
         {!done ? (
           <LoaderCircle
             aria-label={t('tools.running')}
             className="size-3.5 shrink-0 animate-spin text-accent"
           />
-        ) : entry.isError ? (
+        ) : failed ? (
           <CircleX aria-label={t('tools.failed')} className="size-3.5 shrink-0 text-danger" />
+        ) : background?.status === 'stopped' ? (
+          <CircleStop aria-label={t('tools.stopped')} className="size-3.5 shrink-0 text-muted" />
         ) : (
           <CircleCheck aria-label={t('tools.done')} className="size-3.5 shrink-0 text-success" />
         )}
       </button>
+      {background?.status === 'running' && background.lastActivity && (
+        <div className="flex min-w-0 items-center gap-2 border-t border-border px-3 py-1.5 text-xs text-muted">
+          <span title={background.lastActivity} className="min-w-0 flex-1 truncate font-mono">
+            {background.lastActivity}
+          </span>
+          {background.lastActivityAt && (
+            <span className="shrink-0 tabular-nums">
+              {t('tools.ago', {
+                time: formatDuration(now - Date.parse(background.lastActivityAt)),
+              })}
+            </span>
+          )}
+        </div>
+      )}
       {open && (
         <div className="space-y-3 border-t border-border px-3 py-2.5">
           <div>
@@ -307,16 +390,29 @@ function ToolCard({
             </div>
             <CodeBlock>{JSON.stringify(entry.input, null, 2)}</CodeBlock>
           </div>
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted">{t('tools.outputLabel')}</div>
-            {done ? (
-              <CodeBlock tone={entry.isError ? 'danger' : 'neutral'}>
-                {entry.output || '—'}
-              </CodeBlock>
-            ) : (
-              <Placeholder>{t('tools.running')}</Placeholder>
-            )}
-          </div>
+          {background ? (
+            <div>
+              <div className="mb-1 text-xs font-medium text-muted">{t('tools.reportLabel')}</div>
+              {background.summary ? (
+                <CodeBlock tone={failed ? 'danger' : 'neutral'}>{background.summary}</CodeBlock>
+              ) : (
+                <Placeholder>
+                  {background.status === 'running' ? t('tools.running') : '—'}
+                </Placeholder>
+              )}
+            </div>
+          ) : (
+            <div>
+              <div className="mb-1 text-xs font-medium text-muted">{t('tools.outputLabel')}</div>
+              {done ? (
+                <CodeBlock tone={entry.isError ? 'danger' : 'neutral'}>
+                  {entry.output || '—'}
+                </CodeBlock>
+              ) : (
+                <Placeholder>{t('tools.running')}</Placeholder>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -326,6 +422,29 @@ function ToolCard({
 // --- Configuration ----------------------------------------------------------------------
 
 /** How the agent is set up, from the snapshot; after it started, also what it actually got. */
+function SwitchConfiguration({
+  node,
+  agentRun,
+}: {
+  node: Extract<BlueprintNode, { type: 'switch' }>
+  agentRun: AgentRun | undefined
+}) {
+  const t = useT()
+  return (
+    <dl className="divide-y divide-border/70 border-t border-border/70">
+      {node.config.outputs.map((output) => (
+        <Row key={output.id} label={output.name}>
+          <span className={cn(agentRun?.chosenOutput === output.id && 'font-medium text-accent')}>
+            {output.condition.trim() || '—'}
+          </span>
+        </Row>
+      ))}
+      <Row label={t('agent.model')}>{modelLabel(t, node.config.model)}</Row>
+      <Row label={t('agent.devops')}>{devOpsLabel(t, node.config.devops)}</Row>
+    </dl>
+  )
+}
+
 function Configuration({
   node,
   job,
@@ -340,9 +459,9 @@ function Configuration({
   const t = useT()
   const content = job.blueprint.content
   const input = agentRun?.input
-  const folderNode = sourceOf(content, node.id, 'folder')
+  const folderNode = effectiveSource(content, node.id, 'folder')
   const folder = input?.folder ?? (folderNode?.type === 'folder' ? folderNode.config.path : null)
-  const workItemNode = sourceOf(content, node.id, 'workItem')
+  const workItemNode = effectiveSource(content, node.id, 'workItem')
   const workItem = input?.workItem ?? (workItemNode ? job.workItems[workItemNode.id] : undefined)
   const after = incoming(content, node.id, 'result').map(
     (connection) => names[connection.from.nodeId] ?? connection.from.nodeId,
@@ -381,6 +500,17 @@ function Configuration({
           none
         )}
       </Row>
+      {input?.worktree && (
+        <Row label={t('agent.worktree')}>
+          <span
+            className="inline-flex min-w-0 items-center gap-1.5"
+            title={t('agent.worktree.hint')}
+          >
+            <GitBranch aria-hidden className="size-3.5 shrink-0 text-port-folder" />
+            <span className="font-mono text-xs break-all select-text">{input.worktree}</span>
+          </span>
+        </Row>
+      )}
       <Row label={t('agent.model')}>{modelLabel(t, node.config.model)}</Row>
       <Row label={t('agent.effort')}>{effortLabel(t, node.config.effort)}</Row>
       <Row label={t('agent.devops')}>{devOpsLabel(t, node.config.devops)}</Row>

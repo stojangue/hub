@@ -37,6 +37,7 @@ export const de: Translations = {
   'settings.github.error': 'Prüfung fehlgeschlagen',
 
   'common.cancel': 'Abbrechen',
+  'common.save': 'Speichern',
   'common.create': 'Erstellen',
   'common.delete': 'Löschen',
   'common.name': 'Name',
@@ -205,7 +206,7 @@ export const de: Translations = {
     'Ein lokaler Ordner, z. B. das Repository, in dem ein Agent arbeitet.',
   'blocks.workItem.label': 'Arbeitselement',
   'blocks.workItem.description':
-    'Woran gearbeitet wird, z. B. ein GitHub-Issue. Der Auftrag liefert es.',
+    'Woran gearbeitet wird, z. B. ein GitHub-Issue oder ein Pull Request. Der Auftrag liefert es.',
   'blocks.agent.label': 'Agent',
   'blocks.agent.description': 'Führt einen KI-Agenten mit der Claude Code CLI aus.',
 
@@ -253,6 +254,9 @@ export const de: Translations = {
   'inspector.folder.choose': 'Ordner wählen …',
   'inspector.folder.change': 'Ordner ändern …',
   'inspector.folder.missing': 'Diesen Ordner gibt es nicht mehr. Wähle einen anderen.',
+  'inspector.folder.workMode': 'Arbeitsweise',
+  'inspector.folder.workMode.worktree': 'Eigener Worktree pro Auftrag',
+  'inspector.folder.workMode.direct': 'Direkt im Ordner',
   'inspector.agent.cliMissing':
     'Die Claude Code CLI ist nicht verfügbar. Du kannst diesen Agenten bearbeiten, aber Aufträge mit ihm können nicht starten.',
   'inspector.agent.instructions': 'Anweisungen',
@@ -272,8 +276,8 @@ export const de: Translations = {
   'agent.effort.max': 'Maximal',
   'agent.devops': 'DevOps-Zugriff',
   'agent.devops.none': 'Kein Zugriff',
-  'agent.devops.read': 'Arbeitselemente und Pull Requests lesen',
-  'agent.devops.write': 'Lesen, kommentieren und Pull Requests erstellen',
+  'agent.devops.read': 'Nur lesen',
+  'agent.devops.write': 'Lesen und schreiben (kommentieren, erstellen, mergen)',
   'inspector.agent.permission': 'Berechtigungen',
   'inspector.agent.permission.acceptEdits': 'Dateien bearbeiten',
   'inspector.agent.permission.plan': 'Nur lesen',
@@ -292,6 +296,11 @@ export const de: Translations = {
   'jobs.create.repositoryPlaceholder': 'Repository wählen',
   'jobs.create.issuePlaceholder': 'Issue wählen',
   'jobs.create.noIssues': 'Dieses Repository hat keine offenen Issues.',
+  'jobs.create.kind': 'Art des Arbeitselements',
+  'jobs.create.kind.issue': 'Issue',
+  'jobs.create.kind.pullRequest': 'Pull Request',
+  'jobs.create.pullRequestPlaceholder': 'Pull Request wählen',
+  'jobs.create.noPullRequests': 'Dieses Repository hat keine offenen Pull Requests.',
   'jobs.detail.workItemMissing': 'Nicht angegeben',
 
   'agents.status.waiting': 'Wartet',
@@ -300,6 +309,7 @@ export const de: Translations = {
   'agents.status.failed': 'Fehlgeschlagen',
   'agents.status.skipped': 'Übersprungen',
   'agents.status.stopped': 'Gestoppt',
+  'agents.status.notTaken': 'Nicht gewählt',
 
   'start.title': 'Der Auftrag kann noch nicht starten',
   'start.cliMissing': 'Die Claude Code CLI ist nicht installiert.',
@@ -308,6 +318,11 @@ export const de: Translations = {
   'start.folderNotSet': 'Für „{name}“ ist kein Ordner gewählt.',
   'start.folderMissing': 'Der Ordner von „{name}“ existiert nicht: {path}',
   'start.workItemMissing': 'Für „{name}“ wurde kein Arbeitselement angegeben.',
+  'start.folderNotGitRepository':
+    'Der Ordner „{name}“ ist kein Git-Repository, das Agenten brauchen, um ein Issue oder einen Pull Request in einem Worktree zu bearbeiten: {path}',
+  'start.folderWrongRepository': 'Der Ordner „{name}“ ist kein Klon von {repository}.',
+  'start.worktreeFailed':
+    'Der Worktree konnte aus dem Ordner „{name}“ nicht angelegt werden: {message}',
   'start.agentWithoutTask':
     'Agent „{name}“ hat weder Anweisungen noch ein Arbeitselement noch vorherige Ergebnisse.',
   'start.newerFormat':
@@ -324,6 +339,8 @@ export const de: Translations = {
   'agent.waiting': 'Wartet auf die Agenten, von denen er abhängt.',
   'agent.starting': 'Claude Code wird gestartet …',
   'agent.working': 'Arbeitet …',
+  'agent.backgroundWorking': 'Wartet auf {count} Hintergrund-Agent(en) …',
+  'agent.lastActivity': 'letzte Ausgabe vor {time}',
   'agent.noOutput': 'Keine Ausgabe.',
   'agent.previousResults': 'Ergebnisse vorheriger Agenten',
   'agent.prompt': 'Vollständiger Prompt',
@@ -342,6 +359,10 @@ export const de: Translations = {
   'tools.running': 'Läuft …',
   'tools.done': 'Fertig',
   'tools.failed': 'Fehlgeschlagen',
+  'tools.background': 'Hintergrund',
+  'tools.stopped': 'Abgebrochen',
+  'tools.ago': 'vor {time}',
+  'tools.reportLabel': 'Bericht',
   'tools.inputLabel': 'Eingabe ({tool})',
   'tools.outputLabel': 'Ausgabe',
   'settings.devops.title': 'DevOps',
@@ -355,6 +376,34 @@ export const de: Translations = {
   'library.expand': 'Bibliothek ausklappen',
   'library.group.sources': 'Quellen',
   'library.group.ai': 'KI',
+  'library.group.flow': 'Ablauf',
+  'blocks.switch.label': 'Weiche',
+  'blocks.switch.description':
+    'Liest das Ergebnis des Agenten davor und wählt anhand deiner Bedingungen, wie es weitergeht.',
+  'switch.defaultYes': 'Ja',
+  'switch.defaultNo': 'Nein',
+  'canvas.repeat': '↻ bis zu {rounds} Runden',
+  'inspector.switch.outputs': 'Ausgänge',
+  'inspector.switch.outputName': 'Name',
+  'inspector.switch.conditionPlaceholder':
+    'Wann dieser Weg gilt, z. B. „Es gibt Befunde, die behoben werden müssen“',
+  'inspector.switch.addOutput': 'Ausgang hinzufügen',
+  'inspector.switch.editOutput': 'Ausgang bearbeiten',
+  'inspector.switch.deleteOutput': 'Ausgang löschen',
+  'inspector.switch.noCondition': 'Noch keine Bedingung',
+  'inspector.switch.moveUp': '„{name}“ nach oben',
+  'inspector.switch.moveDown': '„{name}“ nach unten',
+  'inspector.switch.conditionLabel': 'Wann dieser Weg gewählt wird',
+  'inspector.switch.conditionHint':
+    'Danach entscheidet die Weiche. Beschreib, was im Ergebnis stehen muss, so wie du es einem Menschen sagen würdest.',
+  'inspector.switch.dialogHelp':
+    'Jeder Ausgang ist ein Weg, wie der Auftrag nach der Weiche weitergeht.',
+  'inspector.switch.newOutput': 'Ausgang {number}',
+  'inspector.repeat.label': 'Wiederholung',
+  'inspector.repeat.maxRounds': 'Höchstens Runden',
+  'run.switch.chosen': 'Gewählt',
+  'start.switchWithoutInput':
+    'Die Weiche „{name}“ hat kein Ergebnis zum Beurteilen. Verbinde einen Agenten mit ihr.',
   'library.limitReached': 'Eine Blaupause kann nur ein {block} haben.',
   'canvas.deleteConnection': 'Verbindung löschen',
   'jobs.detail.started': 'Gestartet {time}',
@@ -364,7 +413,18 @@ export const de: Translations = {
   'run.parallel': '{count} Stränge parallel',
   'run.chain': 'Kette · {count} Agenten',
   'run.after': 'nach {names}',
+  'run.round': 'Runde {round}',
+  'run.loop': 'Wiederholung {name} · bis zu {rounds} Runden',
   'agent.configuration': 'Konfiguration',
   'agent.after': 'Läuft nach',
+  'agent.worktree': 'Worktree',
+  'agent.worktree.hint': 'Eigener Checkout des Pull-Request-Branches, für diesen Lauf angelegt',
+  'run.worktree.uncommittedChanges':
+    'Der Worktree für #{number} wurde behalten, weil er nicht committete Änderungen hat: {path}',
+  'run.worktree.unpushedCommits':
+    'Der Worktree für #{number} wurde behalten, weil Branch {branch} Commits hat, die nicht gepusht sind: {path}',
+  'run.worktree.interrupted':
+    'Hub wurde während des Laufs beendet, daher wurde der Worktree für #{number} behalten: {path}',
+  'run.worktree.removeFailed': 'Der Worktree für #{number} konnte nicht entfernt werden: {path}',
   'agent.showPrompt': 'Vollständigen Prompt anzeigen',
 }

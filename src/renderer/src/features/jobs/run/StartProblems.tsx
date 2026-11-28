@@ -23,6 +23,14 @@ function describe(problem: StartProblem, content: BlueprintContent, t: Translate
       return t('start.folderMissing', { name, path: problem.path })
     case 'workItemMissing':
       return t('start.workItemMissing', { name })
+    case 'folderNotGitRepository':
+      return t('start.folderNotGitRepository', { name, path: problem.path })
+    case 'folderWrongRepository':
+      return t('start.folderWrongRepository', { name, repository: problem.repository })
+    case 'worktreeFailed':
+      return t('start.worktreeFailed', { name, message: problem.message })
+    case 'switchWithoutInput':
+      return t('start.switchWithoutInput', { name })
     case 'agentWithoutTask':
       return t('start.agentWithoutTask', { name })
     case 'newerFormat':

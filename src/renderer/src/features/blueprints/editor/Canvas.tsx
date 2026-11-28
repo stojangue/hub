@@ -1,4 +1,4 @@
-import { Minus, Plus } from 'lucide-react'
+import { Minus, Plus, Repeat } from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -14,7 +14,6 @@ import {
   type SetStateAction,
 } from 'react'
 import {
-  blockDefinitions,
   isBlockType,
   type BlockType,
   type DataType,
@@ -23,7 +22,10 @@ import {
 } from '@shared/blocks'
 import {
   checkConnection,
+  checkRepeat,
   describeUnsupportedNode,
+  findNodePort,
+  nodePorts,
   type BlueprintContent,
   type BlueprintNode,
   type PortRef,
@@ -36,7 +38,10 @@ import { blockDragType, dataTypePresentation } from '../blocks'
 import {
   connectionMidpoint,
   connectionPath,
+  nodeHeight,
   portPosition,
+  repeatMidpoint,
+  repeatPath,
   unsupportedPosition,
   type View,
 } from './geometry'
@@ -360,15 +365,14 @@ export function Canvas({
     const compatible = new Set<string>()
     const ref = { nodeId: node.id, port: port.id }
     for (const candidate of content.nodes) {
-      const definition = blockDefinitions[candidate.type]
-      const ports = side === 'output' ? definition.inputs : definition.outputs
-      for (const other of ports) {
+      for (const other of nodePorts(candidate, side === 'output' ? 'input' : 'output')) {
         const otherRef = { nodeId: candidate.id, port: other.id }
-        const check =
-          side === 'output'
-            ? checkConnection(content, ref, otherRef)
-            : checkConnection(content, otherRef, ref)
-        if (check.ok) compatible.add(portKey(candidate.id, other.id))
+        const [from, to] = side === 'output' ? [ref, otherRef] : [otherRef, ref]
+        // A link back to an earlier agent becomes a repeat connection.
+        const check = checkConnection(content, from, to)
+        if (check.ok || (check.reason === 'cycle' && checkRepeat(content, from, to).ok)) {
+          compatible.add(portKey(candidate.id, other.id))
+        }
       }
     }
     setConnect({
@@ -388,8 +392,7 @@ export function Canvas({
     let target: PortRef | null = null
     let best = reach
     for (const node of content.nodes) {
-      const definition = blockDefinitions[node.type]
-      for (const port of otherSide === 'input' ? definition.inputs : definition.outputs) {
+      for (const port of nodePorts(node, otherSide)) {
         if (!connect.compatible.has(portKey(node.id, port.id))) continue
         const position = portPosition(node, otherSide, port.id)
         if (!position) continue
@@ -542,10 +545,53 @@ export function Canvas({
               const toNode = nodesById.get(connection.to.nodeId)
               const from = fromNode && portPosition(fromNode, 'output', connection.from.port)
               const to = toNode && portPosition(toNode, 'input', connection.to.port)
-              const port =
-                fromNode &&
-                blockDefinitions[fromNode.type].outputs.find((p) => p.id === connection.from.port)
-              if (!from || !to || !port) return null
+              const port = fromNode && findNodePort(fromNode, 'output', connection.from.port)
+              if (!fromNode || !toNode || !from || !to || !port) return null
+              if (connection.repeat) {
+                const bottom = Math.max(
+                  fromNode.position.y + nodeHeight(fromNode),
+                  toNode.position.y + nodeHeight(toNode),
+                )
+                const middle = repeatMidpoint(from, to, bottom)
+                const selected = selection?.kind === 'connection' && selection.id === connection.id
+                const label = t('canvas.repeat', { rounds: connection.repeat.maxRounds })
+                return (
+                  // A repeat runs back below the nodes, dashed, with its rounds in a label that
+                  // selects it.
+                  <g key={connection.id} className={cn(connect && 'opacity-40')}>
+                    <path
+                      d={repeatPath(from, to, bottom)}
+                      fill="none"
+                      strokeWidth={2}
+                      strokeDasharray="6 5"
+                      strokeLinecap="round"
+                      className={selected ? 'stroke-accent' : 'stroke-accent/60'}
+                    />
+                    <foreignObject
+                      x={middle.x - 70}
+                      y={middle.y - 13}
+                      width={140}
+                      height={26}
+                      className="overflow-visible"
+                    >
+                      <div className="flex h-full items-center justify-center">
+                        <button
+                          type="button"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={() => onSelect({ kind: 'connection', id: connection.id })}
+                          className={cn(
+                            'pointer-events-auto flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-xs font-medium whitespace-nowrap text-accent shadow-sm',
+                            selected ? 'border-accent' : 'border-accent/40 hover:border-accent',
+                          )}
+                        >
+                          <Repeat aria-hidden className="size-3" />
+                          {label}
+                        </button>
+                      </div>
+                    </foreignObject>
+                  </g>
+                )
+              }
               const path = connectionPath(from, to)
               const middle = connectionMidpoint(from, to)
               const label = t('canvas.deleteConnection')
