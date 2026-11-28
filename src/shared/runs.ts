@@ -108,6 +108,10 @@ export type StartProblem =
   | { code: 'folderMissing'; nodeId: string; path: string }
   | { code: 'workItemMissing'; nodeId: string }
   | { code: 'agentWithoutTask'; nodeId: string }
+  /** The job was saved by a newer version of the app. */
+  | { code: 'newerFormat' }
+  /** The snapshot has nodes or connections this version cannot use. */
+  | { code: 'unsupportedParts'; nodes: number; connections: number }
 
 export type StartRunResult = { ok: true } | { ok: false; problems: StartProblem[] }
 

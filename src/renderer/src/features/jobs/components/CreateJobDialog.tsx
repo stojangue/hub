@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { maxNameLength } from '@shared/blueprints'
+import { hasUnsupportedParts, isNewerFormat, maxNameLength } from '@shared/blueprints'
 import { Button } from '@renderer/components/Button'
 import { Dialog, Field, inputClasses } from '@renderer/components/Dialog'
 import { Select } from '@renderer/components/Select'
@@ -38,6 +38,14 @@ function CreateJobForm({ onClose }: { onClose: () => void }) {
   const list = blueprints.data ?? []
   const noBlueprints = !blueprints.loading && !blueprints.error && list.length === 0
   const blueprint = list.find((candidate) => candidate.id === blueprintId)
+  // Same checks as `createJob`: a job from such a blueprint could never start.
+  const blocked = !blueprint
+    ? null
+    : isNewerFormat(blueprint.formatVersion)
+      ? t('jobs.create.blueprintNewer')
+      : hasUnsupportedParts(blueprint.content)
+        ? t('jobs.create.blueprintUnsupported')
+        : null
   const workItemNodes = blueprint?.content.nodes.filter((node) => node.type === 'workItem') ?? []
   const needsGitHub = workItemNodes.length > 0
   const loadRepositories = useCallback(
@@ -48,6 +56,7 @@ function CreateJobForm({ onClose }: { onClose: () => void }) {
   const valid =
     name.trim().length > 0 &&
     blueprint !== undefined &&
+    !blocked &&
     workItemNodes.every((node) => workItems[node.id])
 
   function close() {
@@ -113,18 +122,24 @@ function CreateJobForm({ onClose }: { onClose: () => void }) {
       <Field
         label={t('jobs.create.blueprint')}
         hint={
-          noBlueprints && (
-            <span role="status">
-              {t('jobs.create.noBlueprints')}{' '}
-              <Link
-                to="/blueprints"
-                onClick={onClose}
-                className="font-medium text-accent hover:underline"
-              >
-                {t('nav.blueprints')}
-              </Link>
-              .
+          blocked ? (
+            <span role="status" className="text-warning">
+              {blocked}
             </span>
+          ) : (
+            noBlueprints && (
+              <span role="status">
+                {t('jobs.create.noBlueprints')}{' '}
+                <Link
+                  to="/blueprints"
+                  onClick={onClose}
+                  className="font-medium text-accent hover:underline"
+                >
+                  {t('nav.blueprints')}
+                </Link>
+                .
+              </span>
+            )
           )
         }
       >

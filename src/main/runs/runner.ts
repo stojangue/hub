@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { BrowserWindow } from 'electron'
 import type { BlueprintContent, BlueprintNode } from '@shared/blueprints'
-import { incoming, sourceOf } from '@shared/blueprints'
+import { hasUnsupportedParts, incoming, isNewerFormat, sourceOf } from '@shared/blueprints'
 import { IpcEvent, type IpcEventContract } from '@shared/ipc'
 import type { AgentConfig } from '@shared/blocks'
 import type { Job } from '@shared/jobs'
@@ -183,7 +183,17 @@ async function checkRequirements(job: Job): Promise<StartProblem[]> {
   const problems: StartProblem[] = []
   if (active.has(job.id)) return [{ code: 'alreadyRunning' }]
 
+  // Parts this version does not understand might change what the job does, so it does not
+  // run them in part.
+  if (isNewerFormat(job.formatVersion)) return [{ code: 'newerFormat' }]
   const content = job.blueprint.content
+  if (hasUnsupportedParts(content)) {
+    problems.push({
+      code: 'unsupportedParts',
+      nodes: content.unsupported.nodes.length,
+      connections: content.unsupported.connections.length,
+    })
+  }
   const agents = content.nodes.filter((node) => node.type === 'agent')
   if (agents.length === 0) problems.push({ code: 'noAgents' })
   else if (!(await isClaudeInstalled())) problems.push({ code: 'cliMissing' })
@@ -624,6 +634,8 @@ function interrupt(run: JobRun, at: string): JobRun {
 export async function recoverInterruptedRuns(): Promise<void> {
   for (const job of await listJobs()) {
     if (job.lastRun?.status !== 'running' || active.has(job.id)) continue
+    // Its job and run files belong to a newer version, which recovers them itself.
+    if (isNewerFormat(job.formatVersion)) continue
     const at = new Date().toISOString()
     const stored = await readRun(job.id)
     const run = stored ? interrupt(stored, at) : null

@@ -2,6 +2,35 @@ import { Check, ChevronDown } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { cn } from '@renderer/lib/cn'
 
+/** Gap between the trigger and the menu, and between the menu and the window edge, in px. */
+const menuGap = 4
+const viewportMargin = 8
+/** Tallest the menu gets when there is room (matches `max-h-60`). */
+const menuMaxHeight = 240
+/** An option row (`h-8`) plus the menu's padding and border. */
+const optionHeight = 32
+const menuChrome = 10
+
+/**
+ * Places the menu below the trigger, or above it when it does not fit below and there is
+ * more room above. Its height is capped to the room on that side, so it scrolls instead of
+ * running past the window edge.
+ */
+function menuPosition(rect: DOMRect, optionCount: number): CSSProperties {
+  const wanted = Math.min(menuMaxHeight, optionCount * optionHeight + menuChrome)
+  const below = window.innerHeight - rect.bottom - menuGap - viewportMargin
+  const above = rect.top - menuGap - viewportMargin
+  const base = { left: rect.left, width: rect.width }
+  if (below >= wanted || below >= above) {
+    return { ...base, top: rect.bottom + menuGap, maxHeight: Math.max(0, Math.min(wanted, below)) }
+  }
+  return {
+    ...base,
+    bottom: window.innerHeight - rect.top + menuGap,
+    maxHeight: Math.max(0, Math.min(wanted, above)),
+  }
+}
+
 export interface SelectOption {
   value: string
   label: string
@@ -34,8 +63,8 @@ export function Select({ id, value, options, onChange, placeholder, disabled }: 
   function show() {
     const rect = trigger.current?.getBoundingClientRect()
     if (!rect || disabled || options.length === 0) return
-    // Fixed positioning escapes the dialog's scroll container.
-    setPosition({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+    // Fixed positioning escapes the dialog's or panel's scroll container.
+    setPosition(menuPosition(rect, options.length))
     setActive(
       Math.max(
         0,
@@ -66,10 +95,16 @@ export function Select({ id, value, options, onChange, placeholder, disabled }: 
     function handleViewportChange() {
       setOpen(false)
     }
+    // Scrolling a container around the trigger would leave the fixed menu behind.
+    function handleScroll(event: Event) {
+      if (!list.current?.contains(event.target as Node)) setOpen(false)
+    }
     document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('scroll', handleScroll, true)
     window.addEventListener('resize', handleViewportChange)
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('scroll', handleScroll, true)
       window.removeEventListener('resize', handleViewportChange)
     }
   }, [open])
@@ -142,7 +177,7 @@ export function Select({ id, value, options, onChange, placeholder, disabled }: 
           aria-activedescendant={`${listId}-${active}`}
           onKeyDown={handleListKeyDown}
           style={position}
-          className="fixed z-50 max-h-60 overflow-y-auto rounded-lg border border-border bg-background p-1 shadow-lg outline-none"
+          className="fixed z-50 overflow-y-auto overscroll-contain rounded-lg border border-border bg-background p-1 shadow-lg outline-none"
         >
           {options.map((option, index) => {
             const isSelected = option.value === value

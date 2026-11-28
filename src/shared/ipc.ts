@@ -22,6 +22,8 @@ import type { Settings } from './settings'
 
 export const IpcChannel = {
   AppGetVersion: 'app:getVersion',
+  AppDataFolder: 'app:dataFolder',
+  AppOpenDataFolder: 'app:openDataFolder',
   SettingsGet: 'settings:get',
   SettingsSet: 'settings:set',
   GitHubStatus: 'github:status',
@@ -62,6 +64,16 @@ export interface IpcContract {
   [IpcChannel.AppGetVersion]: {
     request: []
     response: string
+  }
+  [IpcChannel.AppDataFolder]: {
+    /** Absolute path of the folder where the app keeps its data. */
+    request: []
+    response: string
+  }
+  [IpcChannel.AppOpenDataFolder]: {
+    /** Shows the data folder in Finder. */
+    request: []
+    response: void
   }
   [IpcChannel.SettingsGet]: {
     request: []
@@ -176,6 +188,8 @@ export type IpcResponse<C extends IpcChannel> = IpcContract[C]['response']
 export interface HubApi {
   app: {
     getVersion: () => Promise<IpcResponse<typeof IpcChannel.AppGetVersion>>
+    dataFolder: () => Promise<IpcResponse<typeof IpcChannel.AppDataFolder>>
+    openDataFolder: () => Promise<IpcResponse<typeof IpcChannel.AppOpenDataFolder>>
   }
   settings: {
     get: () => Promise<IpcResponse<typeof IpcChannel.SettingsGet>>

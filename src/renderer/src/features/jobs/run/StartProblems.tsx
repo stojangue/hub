@@ -25,6 +25,13 @@ function describe(problem: StartProblem, content: BlueprintContent, t: Translate
       return t('start.workItemMissing', { name })
     case 'agentWithoutTask':
       return t('start.agentWithoutTask', { name })
+    case 'newerFormat':
+      return t('start.newerFormat')
+    case 'unsupportedParts':
+      return t('start.unsupportedParts', {
+        nodes: problem.nodes,
+        connections: problem.connections,
+      })
   }
 }
 

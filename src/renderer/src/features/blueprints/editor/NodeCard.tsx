@@ -1,7 +1,7 @@
-import { TriangleAlert } from 'lucide-react'
+import { CircleHelp, TriangleAlert } from 'lucide-react'
 import type { PointerEvent } from 'react'
-import { blockDefinitions, type PortDefinition, type PortSide } from '@shared/blocks'
-import type { BlueprintNode } from '@shared/blueprints'
+import { blockDefinitions, isBlockType, type PortDefinition, type PortSide } from '@shared/blocks'
+import type { BlueprintNode, Position, UnsupportedNodeInfo } from '@shared/blueprints'
 import { useT } from '@renderer/i18n'
 import { cn } from '@renderer/lib/cn'
 import { blockPresentation, dataTypePresentation } from '../blocks'
@@ -174,6 +174,66 @@ export function NodeCard({
           )
         }),
       )}
+    </div>
+  )
+}
+
+interface UnsupportedNodeCardProps {
+  info: UnsupportedNodeInfo
+  position: Position
+  selected: boolean
+  onPointerDown: (event: PointerEvent<HTMLDivElement>) => void
+  onPointerMove: (event: PointerEvent<HTMLDivElement>) => void
+  onPointerUp: (event: PointerEvent<HTMLDivElement>) => void
+}
+
+/**
+ * A stored node this version cannot use. It is kept and shown where it was, so the user
+ * notices it and can remove it; it has no ports, since they are not known.
+ */
+export function UnsupportedNodeCard({
+  info,
+  position,
+  selected,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+}: UnsupportedNodeCardProps) {
+  const t = useT()
+  const label = t('node.unsupported.label')
+  // Same condition as the inspector: a known type can be unsupported too, e.g. a second
+  // work item or an agent without a name.
+  const detail =
+    info.type && !isBlockType(info.type)
+      ? t('node.unsupported.unknownType', { type: info.type })
+      : t('node.unsupported.invalid')
+  return (
+    <div
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      className={cn(
+        'pointer-events-auto absolute cursor-default rounded-xl border border-dashed bg-background/80 shadow-sm transition-colors',
+        selected ? 'border-accent' : 'border-warning/60 hover:border-warning',
+      )}
+      style={{ left: position.x, top: position.y, width: nodeWidth }}
+    >
+      <div className="flex items-center gap-2.5 px-3" style={{ height: headerHeight }}>
+        <div
+          title={label}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md bg-warning/15 text-warning"
+        >
+          <CircleHelp aria-hidden className="size-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-medium">{info.name ?? label}</div>
+          <div title={detail} className="flex items-center gap-1 truncate text-xs text-warning">
+            <TriangleAlert aria-hidden className="size-3 shrink-0" />
+            <span className="truncate">{detail}</span>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

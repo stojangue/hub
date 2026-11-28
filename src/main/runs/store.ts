@@ -1,19 +1,18 @@
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app } from 'electron'
 import { sanitizeRun, type JobRun } from '@shared/runs'
+import { dataFolder, dataFolderReady, idPattern } from '../data-folder'
 
 /**
- * The latest run of each job, with its logs, in `userData/runs/<jobId>.json`. Kept apart
- * from `jobs.json` because logs grow while a run is in progress and are written often.
+ * The latest run of each job, with its logs, in `<data folder>/runs/<jobId>.json`. Kept apart
+ * from the job's file because logs grow while a run is in progress and are written often.
  */
 
-const idPattern = /^[A-Za-z0-9-]{1,100}$/
 const pendingWrites = new Map<string, Promise<void>>()
 
 function runsDir(): string {
-  return join(app.getPath('userData'), 'runs')
+  return join(dataFolder(), 'runs')
 }
 
 function runPath(jobId: string): string {
@@ -24,6 +23,7 @@ function runPath(jobId: string): string {
 export async function readRun(jobId: string): Promise<JobRun | null> {
   if (!idPattern.test(jobId)) return null
   try {
+    await dataFolderReady()
     const run = sanitizeRun(JSON.parse(await readFile(runPath(jobId), 'utf8')))
     return run?.jobId === jobId ? run : null
   } catch (error) {
@@ -42,6 +42,7 @@ export function writeRun(run: JobRun): Promise<void> {
   const next = previous
     .catch(() => undefined)
     .then(async () => {
+      await dataFolderReady()
       await mkdir(runsDir(), { recursive: true })
       await writeFile(`${path}.tmp`, text, 'utf8')
       await rename(`${path}.tmp`, path)
