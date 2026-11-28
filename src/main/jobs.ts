@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
   blueprintFormatVersion,
+  hasUnsupportedParts,
   isNewerFormat,
   sanitizeName,
   type Blueprint,
@@ -40,6 +41,10 @@ export async function createJob(input: unknown): Promise<Job> {
   if (!blueprint) throw new Error('The blueprint does not exist.')
   if (isNewerFormat(blueprint.formatVersion)) {
     throw new Error('The blueprint was saved by a newer version of Hub.')
+  }
+  // Its snapshot could never start and cannot be repaired, so such a job is not created.
+  if (hasUnsupportedParts(blueprint.content)) {
+    throw new Error('The blueprint has parts that need attention. Remove them first.')
   }
   const now = new Date().toISOString()
   const snapshot = takeSnapshot(blueprint, now)

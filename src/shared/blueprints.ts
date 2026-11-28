@@ -9,6 +9,7 @@ import {
   canAddBlock,
   findPort,
   isBlockType,
+  agentDevOpsAccess,
   type BlockConfigs,
   type BlockType,
 } from './blocks'
@@ -134,8 +135,12 @@ const contentMigrations: Record<number, (content: UnknownRecord) => UnknownRecor
           const node = asRecord(raw)
           const config = asRecord(node?.['config'])
           if (node?.['type'] !== 'agent' || !config || !('github' in config)) return raw
+          // A valid `devops` wins, as before the migration existed; otherwise `github` is used.
           const { github, ...rest } = config
-          return { ...node, config: { devops: github, ...rest } }
+          const devops = (agentDevOpsAccess as readonly unknown[]).includes(rest['devops'])
+            ? rest['devops']
+            : github
+          return { ...node, config: { ...rest, devops } }
         })
       : content['nodes'],
   }),
@@ -346,6 +351,31 @@ export function sanitizeContent(value: unknown): BlueprintContent {
     content.connections.push({ id, from, to })
   }
   return content
+}
+
+/**
+ * Tries the unsupported parts again after an edit, as `sanitizeContent` does when the content
+ * is saved, so parts the edit made usable (e.g. a second work item once the first is removed)
+ * become regular right away. Regular parts are kept exactly as edited: sanitizing them would
+ * e.g. trim a name while it is being typed.
+ */
+export function retryUnsupported(content: BlueprintContent): BlueprintContent {
+  if (!hasUnsupportedParts(content)) return content
+  const retried = sanitizeContent(content)
+  const regular = new Set<unknown>([...content.nodes, ...content.connections])
+  const nodeIds = new Set(content.nodes.map((node) => node.id))
+  const connectionIds = new Set(content.connections.map((connection) => connection.id))
+  return {
+    nodes: [...content.nodes, ...retried.nodes.filter((node) => !nodeIds.has(node.id))],
+    connections: [
+      ...content.connections,
+      ...retried.connections.filter((connection) => !connectionIds.has(connection.id)),
+    ],
+    unsupported: {
+      nodes: retried.unsupported.nodes.filter((raw) => !regular.has(raw)),
+      connections: retried.unsupported.connections.filter((raw) => !regular.has(raw)),
+    },
+  }
 }
 
 export function hasUnsupportedParts(content: BlueprintContent): boolean {

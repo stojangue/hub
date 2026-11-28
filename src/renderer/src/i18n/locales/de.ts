@@ -93,6 +93,10 @@ export const de: Translations = {
   'jobs.create.namePlaceholder': 'z. B. Release 1.2',
   'jobs.create.blueprint': 'Blaupause',
   'jobs.create.blueprintPlaceholder': 'Blaupause wählen',
+  'jobs.create.blueprintUnsupported':
+    'Diese Blaupause hat Teile, die Aufmerksamkeit brauchen. Entferne sie im Editor, bevor du einen Auftrag daraus erstellst.',
+  'jobs.create.blueprintNewer':
+    'Diese Blaupause wurde von einer neueren Hub-Version gespeichert. Aktualisiere Hub, um Aufträge daraus zu erstellen.',
   'jobs.create.noBlueprints': 'Es gibt noch keine Blaupausen. Erstelle zuerst eine unter',
   'jobs.delete.label': 'Auftrag {name} löschen',
   'jobs.delete.title': 'Auftrag löschen?',

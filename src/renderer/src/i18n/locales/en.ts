@@ -88,6 +88,10 @@ export const en = {
   'jobs.create.namePlaceholder': 'e.g. Release 1.2',
   'jobs.create.blueprint': 'Blueprint',
   'jobs.create.blueprintPlaceholder': 'Choose a blueprint',
+  'jobs.create.blueprintUnsupported':
+    'This blueprint has parts that need attention. Remove them in the editor before creating a job from it.',
+  'jobs.create.blueprintNewer':
+    'This blueprint was saved by a newer version of Hub. Update Hub to create jobs from it.',
   'jobs.create.noBlueprints': 'There are no blueprints yet. Create one first in',
   'jobs.delete.label': 'Delete job {name}',
   'jobs.delete.title': 'Delete job?',

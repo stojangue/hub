@@ -1,6 +1,6 @@
 import { CircleHelp, TriangleAlert } from 'lucide-react'
 import type { PointerEvent } from 'react'
-import { blockDefinitions, type PortDefinition, type PortSide } from '@shared/blocks'
+import { blockDefinitions, isBlockType, type PortDefinition, type PortSide } from '@shared/blocks'
 import type { BlueprintNode, Position, UnsupportedNodeInfo } from '@shared/blueprints'
 import { useT } from '@renderer/i18n'
 import { cn } from '@renderer/lib/cn'
@@ -201,9 +201,12 @@ export function UnsupportedNodeCard({
 }: UnsupportedNodeCardProps) {
   const t = useT()
   const label = t('node.unsupported.label')
-  const detail = info.type
-    ? t('node.unsupported.unknownType', { type: info.type })
-    : t('node.unsupported.invalid')
+  // Same condition as the inspector: a known type can be unsupported too, e.g. a second
+  // work item or an agent without a name.
+  const detail =
+    info.type && !isBlockType(info.type)
+      ? t('node.unsupported.unknownType', { type: info.type })
+      : t('node.unsupported.invalid')
   return (
     <div
       onPointerDown={onPointerDown}

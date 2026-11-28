@@ -8,6 +8,7 @@ import {
   nextNodeName,
   removeNode,
   removeUnsupportedNode,
+  retryUnsupported,
   sourceOf,
   type Blueprint,
   type BlueprintContent,
@@ -111,12 +112,20 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
     )
   }, [blueprint.id])
 
+  /** Set when a change let unsupported nodes become regular ones, so their indexes shifted. */
+  const promoted = useRef(false)
+
   const change = useCallback(
     (update: (content: BlueprintContent) => BlueprintContent) => {
       if (readOnly) return
       setContent((current) => {
-        const next = update(current)
-        if (next === current) return current
+        const updated = update(current)
+        if (updated === current) return current
+        // Main does the same when saving, so editor and file agree.
+        const next = retryUnsupported(updated)
+        if (next.unsupported.nodes.length < updated.unsupported.nodes.length) {
+          promoted.current = true
+        }
         pending.current = next
         if (timer.current) clearTimeout(timer.current)
         timer.current = setTimeout(flush, saveDelay)
@@ -128,6 +137,14 @@ export function BlueprintEditor({ blueprint }: { blueprint: Blueprint }) {
 
   // Leaving the page saves what is still pending.
   useEffect(() => flush, [flush])
+
+  // A selected unsupported node is selected by index, which no longer fits once parts were
+  // promoted.
+  useEffect(() => {
+    if (!promoted.current) return
+    promoted.current = false
+    setSelection((current) => (current?.kind === 'unsupported' ? null : current))
+  }, [content])
 
   // --- Editing ----------------------------------------------------------------------------
 
