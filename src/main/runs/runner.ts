@@ -344,18 +344,25 @@ function describePullRequestWork(
     lines.push('You have no copy of the code; you can only read and comment on the pull request.')
   }
 
-  if (config.devops === 'write') {
-    const [owner, name] = item.repository.split('/')
-    lines.push(
-      '',
-      'To answer the reviewers:',
-      `- Reply in a review thread: \`gh api repos/${owner}/${name}/pulls/${item.number}/comments/<first comment ID>/replies -f body='…'\``,
-      `- Resolve a thread you addressed, if your instructions ask for it: \`gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread ID>"}) { thread { isResolved } } }'\``,
-      `- Comment on the pull request as a whole: \`gh pr comment ${item.number} --repo ${item.repository} --body '…'\``,
-      'Push your changes before you reply that something is fixed.',
-    )
-  }
+  if (config.devops === 'write') lines.push('', ...describeReplies(item.repository, item.number))
   return lines.join('\n')
+}
+
+/**
+ * How the agent answers review threads. A thread it fixed is resolved, so the next review
+ * round and the switch see what is still open. `number` is `null` for an issue, whose pull
+ * request the agent finds or opens itself.
+ */
+function describeReplies(repository: string, number: number | null): string[] {
+  const [owner, name] = repository.split('/')
+  const pr = number === null ? '<pull request number>' : String(number)
+  return [
+    'To answer the reviewers:',
+    `- Reply in a review thread: \`gh api repos/${owner}/${name}/pulls/${pr}/comments/<first comment ID>/replies -f body='…'\``,
+    `- Resolve every thread whose point you fixed and pushed, right after replying: \`gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread ID>"}) { thread { isResolved } } }'\`. Leave a thread open only if you did not fix it, e.g. because you think the point is wrong; then say why in your reply.`,
+    `- Comment on the pull request as a whole: \`gh pr comment ${pr} --repo ${repository} --body '…'\``,
+    'Push your changes before you reply that something is fixed.',
+  ]
 }
 
 /** How the agent works on an issue in a worktree on a branch of its own. */
@@ -386,6 +393,8 @@ function describeIssueWork(
         ? `Commit your changes with \`git add\` and \`git commit\`, then push them with \`git push\`. The branch exists on GitHub already, so earlier work on the issue may be there. Do not force-push, and do not push to other branches.`
         : `Commit your changes with \`git add\` and \`git commit\`. Push the branch with \`git push -u ${worktree.pushTarget} ${worktree.branch}\`; after that, \`git push\` is enough. Do not force-push, and do not push to other branches.`,
       `If there is no pull request for the branch yet, open one into \`${base}\` with \`gh pr create --repo ${item.repository} --base ${base} --head ${worktree.branch}\`, and write \`Closes #${item.number}\` in its description. Check first with \`gh pr list --repo ${item.repository} --head ${worktree.branch}\`.`,
+      '',
+      ...describeReplies(item.repository, null),
     )
   }
   if (config.permissionMode !== 'plan') {
