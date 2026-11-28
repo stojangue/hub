@@ -115,6 +115,8 @@ export interface PullRequestWorktree {
   createdBranch: boolean
   /** Whether the worktree was kept by an earlier run and is used again, with its work. */
   reused: boolean
+  /** The name of the folder's remote for the work item's repository, e.g. `origin`. */
+  remote: string
   /** The pull request's or issue's number. */
   pullRequest: number
   /** The branch to push to: the pull request's head branch, or for an issue the new branch. */
@@ -205,6 +207,7 @@ export async function createPullRequestWorktree(
     branch,
     createdBranch: true,
     reused: false,
+    remote,
     pullRequest: number,
     headBranch,
     baseBranch: null,
@@ -273,6 +276,34 @@ async function isKeptIssueWorktree(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * The key in the branch's config that marks a branch the app made for an issue. Git drops it
+ * with the branch, and it is shared by all worktrees of the repository.
+ */
+function createdMarker(branch: string): string {
+  return `branch.${branch}.hubCreated`
+}
+
+async function markCreated(root: string, branch: string): Promise<void> {
+  await git(root, ['config', createdMarker(branch), 'true'])
+}
+
+/** Whether the app made the branch, so it may delete it again. */
+async function isMarkedCreated(root: string, branch: string): Promise<boolean> {
+  const value = await git(root, ['config', '--get', createdMarker(branch)]).catch(() => '')
+  return value.trim() === 'true'
+}
+
+/** Whether every commit of `ref` is also on `other`. */
+async function isAncestor(root: string, ref: string, other: string): Promise<boolean> {
+  try {
+    await git(root, ['merge-base', '--is-ancestor', ref, other])
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function hasRef(root: string, ref: string): Promise<boolean> {
   try {
     await git(root, ['rev-parse', '--verify', '--quiet', ref])
@@ -319,7 +350,8 @@ export async function createIssueWorktree(
       `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`,
     ])
   }
-  const local = await hasRef(info.root, `refs/heads/${branch}`)
+  let local = await hasRef(info.root, `refs/heads/${branch}`)
+  const madeByApp = local && (await isMarkedCreated(info.root, branch))
 
   if (local) {
     // Forgets worktrees whose folders are gone, e.g. deleted by a cleanup of the temp folder.
@@ -340,12 +372,22 @@ export async function createIssueWorktree(
       // Marked at once, without waiting in between, so a second run cannot take it, too.
       worktreesInUse.add(key)
       return issueWorktree(info, folder, existing, dirname(existing), branch, {
-        createdBranch: false,
+        createdBranch: madeByApp,
         reused: true,
         number,
         remote,
         base,
       })
+    }
+    // A branch an earlier run made and left behind, e.g. after it reused a kept worktree.
+    // If all its commits are on GitHub or on the default branch, it holds nothing of its
+    // own and may be behind: it is deleted and made again from there, like a new one.
+    const upToDate = onRemote
+      ? `refs/remotes/${remote}/${branch}`
+      : `refs/remotes/${remote}/${base}`
+    if (madeByApp && (await isAncestor(info.root, `refs/heads/${branch}`, upToDate))) {
+      await git(info.root, ['branch', '-D', branch])
+      local = false
     }
   }
 
@@ -353,7 +395,8 @@ export async function createIssueWorktree(
   const root = join(tempDir, repository.split('/')[1] ?? 'repository')
   try {
     if (local) {
-      // The user's own branch for the issue: used as it is, and never deleted afterwards.
+      // The user's own branch for the issue, or one the app left with commits of its own:
+      // used as it is. The user's own is never deleted afterwards.
       await git(info.root, ['worktree', 'add', root, branch])
     } else if (onRemote) {
       await git(info.root, [
@@ -380,8 +423,12 @@ export async function createIssueWorktree(
     await rm(tempDir, { recursive: true, force: true })
     throw error
   }
+  // Remembered with the branch, so a later run that reuses the worktree or finds the branch
+  // left behind still knows it may delete it. Without the mark it is only kept, never lost.
+  if (!local) await markCreated(info.root, branch).catch(() => undefined)
   return issueWorktree(info, folder, root, tempDir, branch, {
-    createdBranch: !local,
+    // A branch the app made is deleted with the worktree, and only once nothing is lost.
+    createdBranch: !local || madeByApp,
     reused: false,
     number,
     remote,
@@ -446,6 +493,7 @@ async function describeIssueWorktree(
     branch,
     createdBranch: options.createdBranch,
     reused: options.reused,
+    remote,
     pullRequest: options.number,
     headBranch: branch,
     baseBranch: base,

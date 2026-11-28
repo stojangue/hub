@@ -483,7 +483,7 @@ function buildPrompt(
     )
   }
   if (loop) parts.push(describeLoop(loop))
-  parts.push(describeDevOpsAccess(config))
+  parts.push(describeDevOpsAccess(config, worktree))
   return parts.join('\n\n')
 }
 
@@ -876,7 +876,7 @@ function startAgent(entry: ActiveRun, step: RunPlanStep): void {
       permissionMode: 'plan',
       devops: node.config.devops,
     }
-    runProcess(entry, step, config, input)
+    runProcess(entry, step, config, input, null)
     return
   }
   if (node?.type !== 'agent') {
@@ -905,7 +905,7 @@ function startAgent(entry: ActiveRun, step: RunPlanStep): void {
     input,
   })
   activity(entry, 'agentStarted', step.id)
-  runProcess(entry, step, node.config, input)
+  runProcess(entry, step, node.config, input, worktree)
 }
 
 function runProcess(
@@ -913,6 +913,7 @@ function runProcess(
   step: RunPlanStep,
   config: AgentConfig,
   input: AgentRunInput,
+  worktree: PullRequestWorktree | null,
 ): void {
   // Without a linked folder the agent works in an empty folder of its own, removed when it
   // ends, and gets only tools that need no approval: its permissions apply to a folder.
@@ -942,8 +943,9 @@ function runProcess(
     ...(model === 'default' ? [] : ['--model', model]),
     ...(effort === 'default' ? [] : ['--effort', effort]),
   ]
-  // In a worktree of its own, the agent commits its changes without asking.
-  const tools = allowedTools(config, { commit: input.worktree !== null })
+  // In a worktree of its own, the agent commits its changes and pushes its branch without
+  // asking.
+  const tools = allowedTools(config, worktree)
   // Last, since the option takes a list; the prompt is passed on stdin.
   if (tools.length > 0) args.push('--allowedTools', tools.join(','))
   let child: ChildProcess
