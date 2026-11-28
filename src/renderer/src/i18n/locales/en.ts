@@ -18,7 +18,6 @@ export const en = {
   'overview.greeting.morning': 'Good morning',
   'overview.greeting.afternoon': 'Good afternoon',
   'overview.greeting.evening': 'Good evening',
-  'overview.subtitle': 'Where would you like to start?',
   'overview.features': 'Features',
 
   'settings.appearance.title': 'Appearance',

@@ -20,7 +20,6 @@ export const de: Translations = {
   'overview.greeting.morning': 'Guten Morgen',
   'overview.greeting.afternoon': 'Guten Tag',
   'overview.greeting.evening': 'Guten Abend',
-  'overview.subtitle': 'Womit möchtest du anfangen?',
   'overview.features': 'Funktionen',
 
   'settings.appearance.title': 'Erscheinungsbild',

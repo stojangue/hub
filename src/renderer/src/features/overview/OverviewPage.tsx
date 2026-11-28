@@ -1,30 +1,25 @@
-import { ArrowRight } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
 import { useId } from 'react'
 import { Link } from 'react-router'
 import type { Language } from '@shared/settings'
 import { navigation, type NavItem } from '@renderer/app/navigation'
+import { PageHeader } from '@renderer/components/PageHeader'
 import { useT, type TranslationKey } from '@renderer/i18n'
 import { useSettings } from '@renderer/settings/context'
 
 /** Every feature from the sidebar, in the same order, except the Overview itself. */
 const features = navigation.filter((item) => item.to !== '/overview')
 
-/** The hub's starting point: a greeting and a card for every feature. */
+/** The hub's starting point: a greeting and every feature, laid out like the other list pages. */
 export function OverviewPage() {
   const t = useT()
   const { settings } = useSettings()
   const now = new Date()
   return (
-    <div className="mx-auto max-w-4xl pt-2 pb-6 sm:pt-6">
-      <header className="mb-8">
-        <p className="text-xs font-medium tracking-wide text-muted uppercase">
-          {formatToday(now, settings.language)}
-        </p>
-        <h1 className="mt-1.5 text-2xl font-semibold tracking-tight">{t(greetingKey(now))}</h1>
-        <p className="mt-1 text-muted">{t('overview.subtitle')}</p>
-      </header>
+    <div>
+      <PageHeader title={t(greetingKey(now))} description={formatToday(now, settings.language)} />
       <nav aria-label={t('overview.features')}>
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(15rem,100%),1fr))] gap-3">
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(min(16rem,100%),1fr))] gap-3">
           {features.map((item) => (
             <li key={item.to}>
               <FeatureCard item={item} />
@@ -36,6 +31,7 @@ export function OverviewPage() {
   )
 }
 
+/** A flat card in the border and radius of the other pages' lists. */
 function FeatureCard({ item: { to, icon: Icon, labelKey, descriptionKey } }: { item: NavItem }) {
   const t = useT()
   const id = useId()
@@ -44,27 +40,22 @@ function FeatureCard({ item: { to, icon: Icon, labelKey, descriptionKey } }: { i
       to={to}
       aria-labelledby={`${id}-label`}
       aria-describedby={`${id}-description`}
-      className="group flex h-full flex-col gap-4 rounded-2xl border border-border bg-surface/50 p-5 outline-none transition-[translate,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:border-accent/40 hover:bg-surface hover:shadow-md hover:shadow-black/5 focus-visible:border-accent focus-visible:bg-surface focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+      className="group flex h-full flex-col rounded-xl border border-border p-4 outline-none transition-colors hover:border-muted/40 hover:bg-surface focus-visible:bg-surface focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none"
     >
-      <span className="flex items-start justify-between">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-accent-soft text-accent">
-          <Icon aria-hidden className="size-5" strokeWidth={1.75} />
+      <span className="flex items-center justify-between">
+        <span className="flex size-8 items-center justify-center rounded-lg border border-border text-muted transition-colors group-hover:text-foreground group-focus-visible:text-foreground motion-reduce:transition-none">
+          <Icon aria-hidden className="size-4" />
         </span>
-        <ArrowRight
+        <ArrowUpRight
           aria-hidden
-          className="size-4 -translate-x-1 text-muted opacity-0 transition-[translate,opacity,color] duration-200 ease-out group-hover:translate-x-0 group-hover:text-accent group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:text-accent group-focus-visible:opacity-100 motion-reduce:translate-x-0 motion-reduce:transition-none"
+          className="size-4 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
         />
       </span>
-      <span>
-        <span id={`${id}-label`} className="block font-semibold">
-          {t(labelKey)}
-        </span>
-        <span
-          id={`${id}-description`}
-          className="mt-1 block text-[0.8125rem] leading-snug text-muted"
-        >
-          {t(descriptionKey)}
-        </span>
+      <span id={`${id}-label`} className="mt-6 font-medium">
+        {t(labelKey)}
+      </span>
+      <span id={`${id}-description`} className="mt-1 text-xs leading-relaxed text-muted">
+        {t(descriptionKey)}
       </span>
     </Link>
   )
