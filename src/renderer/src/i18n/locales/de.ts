@@ -9,6 +9,8 @@ export const de: Translations = {
   'nav.jobs': 'Aufträge',
   'nav.main': 'Hauptnavigation',
   'breadcrumb.label': 'Brotkrumennavigation',
+  'sidebar.collapse': 'Seitenleiste einklappen',
+  'sidebar.expand': 'Seitenleiste ausklappen',
 
   'overview.features': 'Funktionen',
 

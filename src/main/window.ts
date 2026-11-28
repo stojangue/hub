@@ -10,6 +10,9 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 500,
     show: false,
     titleBarStyle: 'hiddenInset',
+    // Vertically centred in the 52px titlebar (`--spacing-titlebar`), on the same axis as the
+    // sidebar toggle and the breadcrumbs. Keep in sync with `--spacing-traffic-lights` in globals.css.
+    trafficLightPosition: { x: 20, y: 19 },
     // Matches `--color-background` in globals.css, so the window does not flash on open.
     backgroundColor: windowBackgroundColor(),
     webPreferences: {
