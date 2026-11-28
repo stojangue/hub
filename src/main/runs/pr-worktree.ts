@@ -239,8 +239,16 @@ export function issueBranchName(number: number, title: string): string {
   return slug ? `${number}-${slug}` : `${number}-issue`
 }
 
-/** Roots of the worktrees that runs use now, so a kept one is not used by two runs at once. */
+/**
+ * Roots of the worktrees that runs use now, so a kept one is not used by two runs at once.
+ * Stored resolved (see `inUseKey`), as git reports them, e.g. `/private/var/…` on macOS.
+ */
 const worktreesInUse = new Set<string>()
+
+/** The form of `path` kept in `worktreesInUse`: resolved, or as it is if it cannot be. */
+async function inUseKey(path: string): Promise<string> {
+  return realpath(path).catch(() => path)
+}
 
 /** The path of the worktree of the repository that has `branch` checked out, or `null`. */
 async function worktreeOfBranch(root: string, branch: string): Promise<string | null> {
@@ -323,11 +331,14 @@ export async function createIssueWorktree(
           `The branch ${branch} is checked out in ${existing}. Switch that folder to another branch, or let the folder block work in the folder itself.`,
         )
       }
-      if (worktreesInUse.has(existing)) {
+      const key = await inUseKey(existing)
+      if (worktreesInUse.has(key)) {
         throw new Error(
           `The worktree ${existing} of the branch ${branch} is in use by another run.`,
         )
       }
+      // Marked at once, without waiting in between, so a second run cannot take it, too.
+      worktreesInUse.add(key)
       return issueWorktree(info, folder, existing, dirname(existing), branch, {
         createdBranch: false,
         reused: true,
@@ -393,6 +404,31 @@ async function issueWorktree(
     base: string
   },
 ): Promise<PullRequestWorktree> {
+  const key = await inUseKey(root)
+  worktreesInUse.add(key)
+  try {
+    return await describeIssueWorktree(info, folder, root, tempDir, branch, options)
+  } catch (error) {
+    worktreesInUse.delete(key)
+    throw error
+  }
+}
+
+/** Describes the issue worktree at `root`. */
+async function describeIssueWorktree(
+  info: GitRepositoryInfo,
+  folder: string,
+  root: string,
+  tempDir: string,
+  branch: string,
+  options: {
+    createdBranch: boolean
+    reused: boolean
+    number: number
+    remote: string
+    base: string
+  },
+): Promise<PullRequestWorktree> {
   const { remote, base } = options
   // A kept worktree may hold commits that are not pushed, so removing it later always checks
   // the head branch instead of comparing with where it starts now.
@@ -400,7 +436,6 @@ async function issueWorktree(
   const tracks = (
     await git(root, ['rev-parse', '--abbrev-ref', '@{upstream}']).catch(() => '')
   ).trim()
-  worktreesInUse.add(root)
   return {
     kind: 'issue',
     folder,
@@ -465,6 +500,8 @@ async function workToKeep(worktree: PullRequestWorktree): Promise<WorktreeKeptRe
 export async function removePullRequestWorktree(
   worktree: PullRequestWorktree,
 ): Promise<WorktreeKeptReason | null> {
+  // Resolved before the folder may be removed, when it can no longer be.
+  const key = await inUseKey(worktree.root)
   try {
     const reason = await workToKeep(worktree)
     if (reason) return reason
@@ -478,6 +515,6 @@ export async function removePullRequestWorktree(
     console.error(`Could not remove the worktree ${worktree.root}`, error)
     return 'removeFailed'
   } finally {
-    worktreesInUse.delete(worktree.root)
+    worktreesInUse.delete(key)
   }
 }
