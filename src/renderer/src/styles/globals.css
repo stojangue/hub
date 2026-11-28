@@ -21,6 +21,18 @@
   --color-merged: oklch(0.53 0.2 300);
 
   --spacing-sidebar: 15rem;
+  /*
+   * Icon rail of the collapsed sidebar. A nav row starts 16px from the left edge (nav px-4) and
+   * pads its 16px icon by 8px (link px-2), so collapsed it is an exact 32px square:
+   * 16 + 32 + 16 = 64, plus the 1px right border. The icon sits at x = 24 in both states.
+   */
+  --spacing-sidebar-collapsed: 4.0625rem;
+  /* Right edge of the macOS window buttons (`trafficLightPosition` in src/main/window.ts). */
+  --spacing-traffic-lights: 4.75rem;
+  /* Left edge of the 32px sidebar toggle, fixed right of the window buttons in both states. */
+  --spacing-sidebar-toggle: calc(var(--spacing-traffic-lights) + 0.75rem);
+  /* Where the breadcrumbs start while the sidebar is collapsed: after the toggle plus a gap. */
+  --spacing-titlebar-collapsed-inset: calc(var(--spacing-sidebar-toggle) + 2rem + 0.5rem);
   /* Height of the area above the sidebar nav that holds the macOS window buttons. */
   --spacing-titlebar: 3.25rem;
 }

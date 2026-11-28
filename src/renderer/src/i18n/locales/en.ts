@@ -7,6 +7,8 @@ export const en = {
   'nav.jobs': 'Jobs',
   'nav.main': 'Main navigation',
   'breadcrumb.label': 'Breadcrumb',
+  'sidebar.collapse': 'Collapse sidebar',
+  'sidebar.expand': 'Expand sidebar',
 
   'overview.features': 'Features',
 
