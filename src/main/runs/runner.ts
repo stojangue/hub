@@ -364,7 +364,9 @@ function describeIssueWork(
   const lines = [
     '## Working on the issue',
     '',
-    `You work in a git worktree made for this run, on the new branch \`${worktree.branch}\`, started from \`${base}\`: ${worktree.path}`,
+    worktree.reused
+      ? `You work in a git worktree that an earlier run kept, on the branch \`${worktree.branch}\` for the issue: ${worktree.path}. It may hold work from then, such as uncommitted changes or commits that are not pushed; look at \`git status\` and \`git log\` first and build on it.`
+      : `You work in a git worktree made for this run, on the branch \`${worktree.branch}\`${worktree.createdBranch ? `, started from \`${base}\`` : ''}: ${worktree.path}`,
     `The folder the user works in (${worktree.folder}) is not touched; do not change files there. Later agents of this run work in the same worktree.`,
     'The worktree is removed after the run unless it has uncommitted changes or commits that are not pushed, so commit and push the changes you want to keep.',
   ]

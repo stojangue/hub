@@ -7,9 +7,9 @@
 
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { WorktreeKeptReason } from '@shared/runs'
 import { cliPath, firstLine } from '../cli-env'
 import type { PullRequestContent } from '../github'
@@ -113,6 +113,8 @@ export interface PullRequestWorktree {
   branch: string
   /** Whether the run made the local branch, so removing the worktree deletes it again. */
   createdBranch: boolean
+  /** Whether the worktree was kept by an earlier run and is used again, with its work. */
+  reused: boolean
   /** The pull request's or issue's number. */
   pullRequest: number
   /** The branch to push to: the pull request's head branch, or for an issue the new branch. */
@@ -128,7 +130,7 @@ export interface PullRequestWorktree {
   canPush: boolean
   /** Whether `git push` alone pushes to the head branch. */
   tracksHead: boolean
-  /** The commit the worktree started at. */
+  /** The commit the worktree started at; empty for a reused worktree. */
   startCommit: string
 }
 
@@ -202,6 +204,7 @@ export async function createPullRequestWorktree(
     tempDir,
     branch,
     createdBranch: true,
+    reused: false,
     pullRequest: number,
     headBranch,
     baseBranch: null,
@@ -236,6 +239,32 @@ export function issueBranchName(number: number, title: string): string {
   return slug ? `${number}-${slug}` : `${number}-issue`
 }
 
+/** Roots of the worktrees that runs use now, so a kept one is not used by two runs at once. */
+const worktreesInUse = new Set<string>()
+
+/** The path of the worktree of the repository that has `branch` checked out, or `null`. */
+async function worktreeOfBranch(root: string, branch: string): Promise<string | null> {
+  const output = await git(root, ['worktree', 'list', '--porcelain'])
+  for (const entry of output.split(/\n\s*\n/)) {
+    const lines = entry.split('\n')
+    const path = lines.find((line) => line.startsWith('worktree '))?.slice('worktree '.length)
+    if (path && lines.includes(`branch refs/heads/${branch}`)) return path
+  }
+  return null
+}
+
+/** Whether `path` is a worktree an earlier run made for an issue: `<tmp>/hub-issue-…/<name>`. */
+async function isKeptIssueWorktree(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    const parent = dirname(path)
+    if (!basename(parent).startsWith('hub-issue-')) return false
+    return (await realpath(dirname(parent))) === (await realpath(tmpdir()))
+  } catch {
+    return false
+  }
+}
+
 async function hasRef(root: string, ref: string): Promise<boolean> {
   try {
     await git(root, ['rev-parse', '--verify', '--quiet', ref])
@@ -248,7 +277,8 @@ async function hasRef(root: string, ref: string): Promise<boolean> {
 /**
  * Adds a worktree for an issue on the branch named after it, in a temporary folder. If the
  * branch exists already, on the remote or here, work goes on there; otherwise it is made from
- * the repository's default branch, and the agent pushes it and opens a pull request. Throws
+ * the repository's default branch, and the agent pushes it and opens a pull request. A
+ * worktree an earlier run kept for the branch is used again, with the work it holds. Throws
  * with a message if anything fails, e.g. when the branch is checked out somewhere else.
  */
 export async function createIssueWorktree(
@@ -283,6 +313,31 @@ export async function createIssueWorktree(
   }
   const local = await hasRef(info.root, `refs/heads/${branch}`)
 
+  if (local) {
+    // Forgets worktrees whose folders are gone, e.g. deleted by a cleanup of the temp folder.
+    await git(info.root, ['worktree', 'prune'])
+    const existing = await worktreeOfBranch(info.root, branch)
+    if (existing) {
+      if (!(await isKeptIssueWorktree(existing))) {
+        throw new Error(
+          `The branch ${branch} is checked out in ${existing}. Switch that folder to another branch, or let the folder block work in the folder itself.`,
+        )
+      }
+      if (worktreesInUse.has(existing)) {
+        throw new Error(
+          `The worktree ${existing} of the branch ${branch} is in use by another run.`,
+        )
+      }
+      return issueWorktree(info, folder, existing, dirname(existing), branch, {
+        createdBranch: false,
+        reused: true,
+        number,
+        remote,
+        base,
+      })
+    }
+  }
+
   const tempDir = await mkdtemp(join(tmpdir(), 'hub-issue-'))
   const root = join(tempDir, repository.split('/')[1] ?? 'repository')
   try {
@@ -314,10 +369,38 @@ export async function createIssueWorktree(
     await rm(tempDir, { recursive: true, force: true })
     throw error
   }
-  const startCommit = (await git(root, ['rev-parse', 'HEAD'])).trim()
+  return issueWorktree(info, folder, root, tempDir, branch, {
+    createdBranch: !local,
+    reused: false,
+    number,
+    remote,
+    base,
+  })
+}
+
+/** Describes the issue worktree at `root` and marks it as in use. */
+async function issueWorktree(
+  info: GitRepositoryInfo,
+  folder: string,
+  root: string,
+  tempDir: string,
+  branch: string,
+  options: {
+    createdBranch: boolean
+    reused: boolean
+    number: number
+    remote: string
+    base: string
+  },
+): Promise<PullRequestWorktree> {
+  const { remote, base } = options
+  // A kept worktree may hold commits that are not pushed, so removing it later always checks
+  // the head branch instead of comparing with where it starts now.
+  const startCommit = options.reused ? '' : (await git(root, ['rev-parse', 'HEAD'])).trim()
   const tracks = (
     await git(root, ['rev-parse', '--abbrev-ref', '@{upstream}']).catch(() => '')
   ).trim()
+  worktreesInUse.add(root)
   return {
     kind: 'issue',
     folder,
@@ -326,8 +409,9 @@ export async function createIssueWorktree(
     path: info.prefix ? join(root, info.prefix.replace(/\/$/, '')) : root,
     tempDir,
     branch,
-    createdBranch: !local,
-    pullRequest: number,
+    createdBranch: options.createdBranch,
+    reused: options.reused,
+    pullRequest: options.number,
     headBranch: branch,
     baseBranch: base,
     pushTarget: remote,
@@ -393,5 +477,7 @@ export async function removePullRequestWorktree(
   } catch (error) {
     console.error(`Could not remove the worktree ${worktree.root}`, error)
     return 'removeFailed'
+  } finally {
+    worktreesInUse.delete(worktree.root)
   }
 }
